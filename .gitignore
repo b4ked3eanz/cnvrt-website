@@ -1,0 +1,11 @@
+# Working material, not part of the site. index.html references none of it and
+# together it is ~400MB — an order of magnitude more than the site itself.
+hero-video/
+hero-options/
+hud.png
+Frame*.png
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+desktop.ini

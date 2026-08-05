@@ -1,0 +1,2792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CNVRTLABS — Ship stronger. Ship faster.</title>
+<link rel="stylesheet" href="assets/fonts/fonts.css">
+<style>
+/* ============================================================================
+   cnvrt hero — run 3
+   Built 1:1 from Figma node 423:1499 (1920x1080).
+   Buttons follow component sets 423:1206 (primary) and 425:1746 (secondary).
+
+   Figma -> CSS conversions applied throughout (verified against Figma's own
+   SVG export, which writes stdDeviation = radius / 2):
+     LAYER_BLUR      radius R  ->  filter: blur(R/2)
+     BACKGROUND_BLUR radius R  ->  backdrop-filter: blur(R/2)
+     DROP_SHADOW     radius R  ->  text-shadow blur R          (1:1)
+   ========================================================================= */
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  /* One design pixel. The whole hero is authored in Figma's 1920px space and
+     scaled from this single unit, so every measurement below is the literal
+     number read off the Figma node. JS refines it to clientWidth so a vertical
+     scrollbar (once more sections land) can't push --u out of sync. */
+  --u: calc(100vw / 1920);
+
+  --cream:      #FAE5D8;   /* rgba(250,229,216) — headline / body text        */
+  --orange:     #FF4208;
+  --orange-lt:  #FF5A27;
+  --grad-a:     #FF5409;   /* secondary-button text gradient, top             */
+  --grad-b:     #FF3907;   /* secondary-button text gradient, bottom          */
+
+  --ease: cubic-bezier(.22,.61,.36,1);
+  /* expo-out — long tail, no overshoot. Reads as weight settling rather than
+     as a linear size change, which is what makes the expand feel deliberate. */
+  --expo: cubic-bezier(.16,1,.3,1);
+  /* the curve from the Figma interaction panel (Smart animate, 800ms).
+     y1 = 1.03 puts a hair of overshoot in — legal in CSS, only x is clamped. */
+  --pop-ease: cubic-bezier(0, 1.03, 0, .99);
+  --pop-dur: 800ms;
+
+  /* hero.mp4 is 3832x2164 — NOT the 1920x1083 of the Figma still. The overlay
+     box below is driven off this, so replacing the clip means updating it. */
+  --video-ar: 1.770795;
+}
+
+html{background:#000}
+body{
+  background:#000;
+  /* clip, NOT hidden: overflow-x:hidden makes body a scroll container, which
+     kills position:sticky on the offerings panel and stops window.scrollTo
+     from moving the page at all. clip suppresses the same overflow without
+     establishing one. */
+  overflow-x:clip;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  /* Only MD Thermochrome 500/600 and OffBit 700 are supplied. Never let the
+     browser fake a weight it doesn't have — a synthetic bold would silently
+     break the Medium/Semibold distinction the design depends on. */
+  font-synthesis:none;
+}
+
+img{display:block}
+
+/* ---------------------------------------------------------------- stage --- */
+/* Figma: 'hero frame' 1920x1080, clipsContent = true.
+   isolation:isolate reproduces the frame boundary so every mix-blend-mode
+   child composites against the video below it and nothing outside the hero. */
+.hero{
+  position:relative;
+  width:100%;
+  height:100vh;
+  min-height:calc(560 * var(--u));
+  overflow:hidden;
+  isolation:isolate;
+  background:#000;
+}
+
+/* ---------------------------------------------------------------- media ---
+   The video and the TV-screen overlay live in ONE box that is exactly the
+   object-fit:cover rectangle. Because the box carries the video's own aspect
+   ratio, the overlay can be positioned as a plain % of it and will stay welded
+   to the TV at every viewport size — which a % of the *hero* could never do,
+   since cover crops a different amount on each axis as the aspect changes.
+
+   cover math: width must satisfy w >= 100vw AND w/ar >= 100vh. */
+.hero__media{
+  --mw: max(100vw, calc(100vh * var(--video-ar)));
+  --mh: max(100vh, calc(100vw / var(--video-ar)));
+  position:absolute;
+  left:50%; top:50%;
+  transform:translate(-50%,-50%);
+  width:var(--mw);
+  height:var(--mh);
+  /* one design px of the 1920x1083 still that the overlay was drawn against */
+  --tvu: calc(var(--mw) * 0.00051665);
+}
+
+/* Figma: 'Frame 1820556622 1' 1920x1083, IMAGE fill scaleMode=FILL.
+   Swapped for the kling 62 render per brief. */
+.hero__bg{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  object-fit:cover; object-position:center;
+  pointer-events:none;
+}
+
+/* Figma 427:3424 'actual screen' — masks off the logo that morphs inside the
+   TV. Placed by measuring the blown-out screen in the video itself (median over
+   37 frames: 1703,789,392x311 of 3832x2164) and re-applying the offset the
+   designer used against the still, so it sits on the real TV rather than on
+   where the still happened to put it. The screen is static across the clip. */
+.tv{
+  position:absolute;
+  left:44.3899%;
+  top:36.1839%;
+  width:10.4363%;
+  height:15.0010%;
+  pointer-events:none;
+}
+.tv > *{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+}
+/* 427:3425 black mark, then 427:3426 the same mark at .47 on SCREEN */
+.tv__glow{opacity:.47; mix-blend-mode:screen;}
+/* 427:3427 / 427:3430 — white panel with the mark knocked out (boolean
+   SUBTRACT), LINEAR_DODGE. plus-lighter is the additive match; screen is the
+   fallback for engines without it. Figma blur 4 and 14 -> /2 as everywhere. */
+.tv__panel-a,
+.tv__panel-b{mix-blend-mode:screen; mix-blend-mode:plus-lighter;}
+.tv__panel-a{opacity:.6; filter:blur(calc(2 * var(--tvu)));}
+.tv__panel-b{opacity:.3; filter:blur(calc(7 * var(--tvu)));}
+
+.abs{position:absolute}
+
+/* =====================================================================
+   TOP BAR
+   ===================================================================== */
+
+/* Figma 423:1522 'Frame 22' — 32.002x32 @ (14,14), vector fill #FAE5D8 */
+/* ---------------------------------------------------------------- chrome ---
+   Logo, nav and agent bar are one fixed layer shared by every section, so they
+   persist across the scroll instead of each section carrying its own copy.
+   They live as direct children of <body>: a fixed element still PAINTS inside
+   its ancestor's stacking context, so leaving them in .hero (isolate +
+   overflow:hidden) would have trapped the logo's blend against the hero alone.
+   None of them may gain a z-index — position:fixed already creates a stacking
+   context, and adding isolation on top is what breaks the screen glows. */
+.chrome{position:static}
+
+.logo{
+  position:fixed;
+  /* Requested: exclusion. result = a + b - 2ab, so the cream mark stays light
+     over the dark plate and inverts to dark if it ever crosses a bright frame
+     of the video — which is the point of using it over a moving backdrop. */
+  mix-blend-mode:exclusion;
+  left:calc(14 * var(--u));
+  top:calc(14 * var(--u));
+  width:calc(33 * var(--u));
+  height:calc(32 * var(--u));
+  /* 423:1522 is a CLIPPING frame: radius 3.5636368 + clipsContent. The vector
+     inside only carries a 0.64 radius of its own, so without this the four
+     corners keep ~1.2 design px of cream that Figma cuts away. The exported
+     canvas is 33 wide while the glyph ends at 32.0024, so shave that 0.9976
+     gutter first — rounding the raw 33px box would put the right-hand arcs a
+     full design px outboard of the real frame edge. */
+  clip-path:inset(0 calc(0.9976 * var(--u)) 0 0 round calc(3.5636368 * var(--u)));
+}
+
+/* Figma 423:1525 — MD Thermochrome Medium 16/19.2, ls 6%, #FAE5D8, layer opacity .6 */
+.ticker{
+  left:calc(822 * var(--u));
+  top:calc(16 * var(--u));
+  width:calc(277 * var(--u));
+  height:calc(19 * var(--u));
+  font:500 calc(16 * var(--u))/calc(19.2 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em;
+  color:var(--cream);
+  opacity:.6;
+  white-space:nowrap;
+}
+
+/* Figma 423:1527 'CNVRTLABS' — OffBit DotBold 28/22.4 (0.8), ls 0, #FAE5D8.
+   Sits 10px below its 32px-tall wrapper frame (423:1530 @ y=123). */
+.wordmark{
+  left:calc(885 * var(--u));
+  top:calc(133 * var(--u));
+  width:calc(151 * var(--u));
+  height:calc(22 * var(--u));
+  font:700 calc(28 * var(--u))/calc(22.4 * var(--u)) 'OffBit Trial',monospace;
+  letter-spacing:0;
+  color:var(--cream);
+  white-space:nowrap;
+}
+
+/* =====================================================================
+   NAV  — Figma 423:1531, 204x24 @ (1692,18), auto-layout H, gap 16
+   ===================================================================== */
+.nav{
+  position:fixed;
+  left:calc(1692 * var(--u));
+  top:calc(18 * var(--u));
+  width:calc(204 * var(--u));
+  height:calc(24 * var(--u));
+}
+
+/* ---- secondary button: [1] DECK — Figma 423:1532, 78x24 -------------- */
+/* Three stacked copies of identical content (Figma 423:1533 / 1542 / 1551):
+     base            — crisp
+     +blur 8, screen, layer opacity .8
+     +blur 28, screen, layer opacity .8                                   */
+.btn-deck{
+  position:absolute; left:0; top:0;
+  width:calc(78 * var(--u));
+  height:calc(24 * var(--u));
+  cursor:pointer;
+  text-decoration:none;
+}
+.btn-deck__layer{
+  position:absolute; inset:0;
+  width:calc(78 * var(--u));
+  height:calc(24 * var(--u));
+}
+.btn-deck__layer--g1{opacity:.8; mix-blend-mode:screen; filter:blur(calc(4 * var(--u)));}
+.btn-deck__layer--g2{opacity:.8; mix-blend-mode:screen; filter:blur(calc(14 * var(--u)));}
+
+/* auto-layout H: padding-l/r 8, gap 8  ->  [1] at x=8 (w17), DECK at x=33 (w37) */
+.btn-deck__num,
+.btn-deck__label{
+  position:absolute; top:0;
+  height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em;
+  white-space:nowrap;
+  /* Figma fill: GRADIENT_LINEAR, handles (0.5,0)->(0.5,1) = vertical */
+  background:linear-gradient(180deg,var(--grad-a) 0%,var(--grad-b) 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+}
+.btn-deck__num  {left:calc(8  * var(--u)); width:calc(17 * var(--u));}
+.btn-deck__label{left:calc(33 * var(--u)); width:calc(37 * var(--u));}
+
+/* corner brackets — Figma groups 423:1536 / 423:1539, 2.5x24.5 */
+/* Figma ceil'd these two exports: the real render height is 24.77716 but the
+   canvas came out 25, so the artwork inside is uniformly scaled by
+   25 / 24.77716 = 1.008993. Dividing the file's own polyline by that factor
+   returns Figma's exact 0.5 / 3.5 / 23.0 / 24.5 and stroke-width 1.0 — so the
+   box has to shrink by the same factor for the bracket to draw 1:1.
+   The two assets also differ in where SVG y=0 lands: bracket-left starts on the
+   tab's fill (= the group's geometry top, nav-rel -0.5), while bracket-right
+   starts on the stroke's cap, 0.27734 above its geometry top (nav-rel 0). */
+.btn-deck__brk{
+  position:absolute;
+  width:calc(2.97327 * var(--u));
+  height:calc(24.77716 * var(--u));
+  transition:left .22s var(--ease);
+}
+.btn-deck__brk--l{left:calc(0    * var(--u)); top:calc(-0.5     * var(--u));}
+.btn-deck__brk--r{left:calc(75.5 * var(--u)); top:calc(-0.27734 * var(--u));}
+
+/* HOVER (Figma 425:1813 'hover'): the bracket pair springs 4px outward on
+   each side — 78 wide becomes 86. Text does not move. */
+.btn-deck:hover .btn-deck__brk--l,
+.btn-deck:focus-visible .btn-deck__brk--l{left:calc(-4 * var(--u));}
+.btn-deck:hover .btn-deck__brk--r,
+.btn-deck:focus-visible .btn-deck__brk--r{left:calc(79.5 * var(--u));}
+
+/* ---- primary button: [2] CONTACT — Figma 423:1560, 110x24 ------------ */
+/* Stack, bottom to top (Figma 423:1561 / 1564 / 1567):
+     union +blur 30, screen
+     union +blur 10, screen
+     union +background-blur 34  (the face)
+     [2] CONTACT                                                          */
+.btn-contact{
+  position:absolute;
+  left:calc(94 * var(--u));
+  top:0;
+  width:calc(110 * var(--u));
+  height:calc(24 * var(--u));
+  cursor:pointer;
+  text-decoration:none;
+  --pop:0px;      /* hover lift  */
+  --mx:0px;       /* cursor pull */
+  --my:0px;
+}
+/* Figma 423:1236 -> 423:1237: EVERY layer moves exactly -6y on hover, the
+   button lifting out of its slot. The transform cannot go on .btn-contact
+   itself — that would make it a stacking context and wall the screen-blended
+   glow layers off from the backdrop — so each absolutely-positioned child
+   carries it instead.
+   Pull and lift ride on two different properties (`translate` vs `transform`)
+   purely so they can have different timings: the magnet has to track the
+   cursor in ~250ms while the lift runs the 800ms Figma curve. */
+.btn-contact > *{
+  translate:var(--mx) var(--my);
+  transform:translateY(var(--pop));
+  transition:translate .25s cubic-bezier(.22,.61,.36,1),
+             transform var(--pop-dur) var(--pop-ease);
+}
+.btn-contact:hover,
+.btn-contact:focus-visible{--pop:calc(-6 * var(--u));}
+.btn-contact.is-pulled > *{transition:translate .12s linear,
+                                      transform var(--pop-dur) var(--pop-ease);}
+/* The union bitmap is 110x30.156 sitting at y=-2, exported with a 0.5px
+   stroke gutter on every side — hence the -0.5 nudge and 111x32 box. */
+.btn-contact__shape{
+  position:absolute;
+  left:calc(-0.5 * var(--u));
+  top:calc(-2.5 * var(--u));
+  width:calc(111 * var(--u));
+  height:calc(32 * var(--u));
+  overflow:visible;
+}
+.btn-contact__shape--g1{mix-blend-mode:screen; filter:blur(calc(15 * var(--u)));}
+.btn-contact__shape--g2{mix-blend-mode:screen; filter:blur(calc(5  * var(--u)));}
+
+/* background blur, clipped to the union outline (objectBoundingBox path so it
+   scales with --u instead of being frozen at 1920px) */
+.btn-contact__backdrop{
+  position:absolute;
+  left:calc(-0.5 * var(--u));
+  top:calc(-2.5 * var(--u));
+  width:calc(111 * var(--u));
+  height:calc(32 * var(--u));
+  -webkit-backdrop-filter:blur(calc(17 * var(--u)));
+  backdrop-filter:blur(calc(17 * var(--u)));
+  clip-path:url(#clip-contact-union);
+}
+
+.btn-contact__num,
+.btn-contact__label{
+  position:absolute; top:0;
+  height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em;
+  color:#fff;
+  white-space:nowrap;
+}
+.btn-contact__num  {left:calc(8  * var(--u)); width:calc(19 * var(--u));}
+.btn-contact__label{left:calc(35 * var(--u)); width:calc(67 * var(--u));}
+
+/* Face gradient. Default (Figma 423:1567) #FF4208@.27 -> #FF5A27@.80.
+   HOVER (Figma 423:1227)               #FF4208@.70 -> #FF4027@1.0
+   Only the face changes — both glow layers keep the default ramp. */
+#gContactFace .cf-a{stop-color:#FF4208; stop-opacity:.27;
+  transition:stop-color .18s var(--ease), stop-opacity .18s var(--ease);}
+#gContactFace .cf-b{stop-color:#FF5A27; stop-opacity:.8;
+  transition:stop-color .18s var(--ease), stop-opacity .18s var(--ease);}
+.btn-contact:hover #gContactFace .cf-a,
+.btn-contact:focus-visible #gContactFace .cf-a{stop-opacity:.7;}
+.btn-contact:hover #gContactFace .cf-b,
+.btn-contact:focus-visible #gContactFace .cf-b{stop-color:#FF4027; stop-opacity:1;}
+
+/* =====================================================================
+   HEADLINE — Figma 425:3041, 620.593x325 @ (25,245)
+   OffBit DotBold 96 / 76.8 (0.8), ls -1%, #FAE5D8
+   ===================================================================== */
+.headline{
+  left:calc(25 * var(--u));
+  top:calc(245 * var(--u));
+  width:calc(620.593 * var(--u));
+  height:calc(325 * var(--u));
+}
+.hl{position:absolute;}
+.hl__text{
+  display:block;
+  margin:0;
+  font:700 calc(96 * var(--u))/calc(76.8 * var(--u)) 'OffBit Trial',monospace;
+  letter-spacing:-.01em;
+  color:var(--cream);
+  white-space:pre-line;
+}
+/* the squircle full-stop cluster (Figma 423:1506 / 423:1510, 8.594x8.787) */
+/* Same ceil'd-export correction as the DECK brackets: the 9x9 canvas holds
+   artwork scaled by 9 / 8.78711 = 1.024227, which is why its ink measures
+   8.80161 wide — divide that back and you get Figma's 8.59341 exactly. */
+.hl__dot{
+  position:absolute;
+  width:calc(8.7871 * var(--u));
+  height:calc(8.7871 * var(--u));
+}
+/* Figma 425:3039 — 462.593x154 @ (0,0); text 448 wide; dot @ (454,130) */
+.hl--1{left:0; top:0; width:calc(462.593 * var(--u)); height:calc(154 * var(--u));}
+.hl--1 .hl__text{width:calc(448 * var(--u));}
+.hl--1 .hl__dot {left:calc(454 * var(--u)); top:calc(130 * var(--u));}
+/* Figma 425:3040 — 333.593x154 @ (287,171); text 322 wide; dot @ (325,131) */
+.hl--2{left:calc(287 * var(--u)); top:calc(171 * var(--u)); width:calc(333.593 * var(--u)); height:calc(154 * var(--u));}
+.hl--2 .hl__text{width:calc(322 * var(--u));}
+.hl--2 .hl__dot {left:calc(325 * var(--u)); top:calc(131 * var(--u));}
+
+/* =====================================================================
+   SUB TEXT — Figma 425:3042, 311x84 @ (1487,472), auto-layout H gap 17
+   ===================================================================== */
+.sub{
+  left:calc(1487 * var(--u));
+  top:calc(472 * var(--u));
+  width:calc(311 * var(--u));
+  height:calc(84 * var(--u));
+}
+/* arrow well: 15x21, padding-y 2 -> the 15x17 vector sits at y=2 */
+.sub__arrow{
+  position:absolute; left:0; top:0;
+  width:calc(15 * var(--u));
+  height:calc(21 * var(--u));
+}
+.sub__arrowimg{
+  position:absolute; left:0; top:calc(2 * var(--u));
+  width:calc(15 * var(--u));
+  height:calc(17 * var(--u));
+}
+/* Figma 423:1519 blur 4 @ .6 screen, 423:1520 blur 23 screen */
+.sub__arrowimg--g1{opacity:.6; mix-blend-mode:screen; filter:blur(calc(2 * var(--u)));}
+.sub__arrowimg--g2{mix-blend-mode:screen; filter:blur(calc(11.5 * var(--u)));}
+
+/* Figma 423:1503 — MD Thermochrome Semibold 16/20.8 (130%), ls 6%,
+   #FAE5D8, layer opacity .7 */
+/* Width is Figma's 279 plus ONE letter-space (0.96px). CSS adds letter-spacing
+   after the final glyph of a line and counts it when deciding to wrap; Figma
+   does not. Line 4 measures 279.36 in Chrome vs a 279 box, so without this it
+   wraps to five lines instead of four. The next break candidate needs 282.56,
+   so 279.96 is comfortably inside the window and no other break moves. */
+.sub__copy{
+  position:absolute;
+  left:calc(32 * var(--u));
+  top:0;
+  width:calc((279 + 0.96) * var(--u));
+  height:calc(84 * var(--u));
+  font:600 calc(16 * var(--u))/calc(20.8 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em;
+  color:var(--cream);
+  opacity:.7;
+}
+
+/* =====================================================================
+   AGENT BAR — Figma 423:1573, 277x33 @ (1615,983)
+   = 28 from the right edge, 64 from the bottom
+   ===================================================================== */
+/* Hero puts this at 28/64 from the corner, the offerings frame at 30/48.
+   One fixed bar can only have one position — using the hero's. */
+.agent{
+  position:fixed;
+  right:calc(28 * var(--u));
+  bottom:calc(64 * var(--u));
+  width:calc(277 * var(--u));
+  height:calc(33 * var(--u));
+}
+/* Figma 423:1574 — 29x29 @ (0,2), r3, clip, stroke 1 #FF4208, fill #FF4208 @ .6 */
+.agent__icon{
+  position:absolute;
+  left:0; top:calc(2 * var(--u));
+  width:calc(29 * var(--u));
+  height:calc(29 * var(--u));
+  border-radius:calc(3 * var(--u));
+  border:calc(1 * var(--u)) solid var(--orange);
+  background:rgba(255,66,8,.6);
+  overflow:hidden;
+}
+.agent__iconimg{
+  position:absolute;
+  left:calc(2 * var(--u));      /* 3 from frame edge, minus the 1px border box */
+  top:calc(2 * var(--u));
+  width:calc(22 * var(--u));
+  height:calc(22 * var(--u));
+}
+/* union 242x33 @ x=35, exported with a 0.5px stroke gutter */
+.agent__shape{
+  position:absolute;
+  left:calc(34.5 * var(--u));
+  top:calc(-0.5 * var(--u));
+  width:calc(243 * var(--u));
+  height:calc(34 * var(--u));
+}
+/* Figma order here is inverted vs. the CONTACT button: the background-blur
+   face is the BOTTOM layer and both glows sit on top of it. */
+.agent__backdrop{
+  position:absolute;
+  left:calc(34.5 * var(--u));
+  top:calc(-0.5 * var(--u));
+  width:calc(243 * var(--u));
+  height:calc(34 * var(--u));
+  -webkit-backdrop-filter:blur(calc(17 * var(--u)));
+  backdrop-filter:blur(calc(17 * var(--u)));
+  clip-path:url(#clip-agentbar-union);
+}
+.agent__shape--g1{mix-blend-mode:screen; filter:blur(calc(5  * var(--u)));}
+.agent__shape--g2{mix-blend-mode:screen; filter:blur(calc(15 * var(--u)));}
+
+/* Figma 423:1602 — Semibold 16/19.2, ls 6%, #FAE5D8,
+   DROP_SHADOW 0 0 4 rgba(255,222,202,.55) -> 1:1 as a text-shadow */
+.agent__label{
+  position:absolute;
+  left:calc(43 * var(--u));
+  top:calc(7 * var(--u));
+  width:calc(165 * var(--u));
+  height:calc(19 * var(--u));
+  font:600 calc(16 * var(--u))/calc(19.2 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em;
+  color:var(--cream);
+  text-shadow:0 0 calc(4 * var(--u)) rgba(255,222,202,.55);
+  white-space:nowrap;
+}
+
+/* =====================================================================
+   TESTIMONIAL — Figma 423:1604, 182x120 @ (36,890)
+   = 36 from the left edge, 70 from the bottom
+   ===================================================================== */
+.quote{
+  left:calc(36 * var(--u));
+  bottom:calc(70 * var(--u));
+  width:calc(182 * var(--u));
+  height:calc(120 * var(--u));
+}
+/* union 179.991x108.031 @ (-0.129, 8.470) — it does NOT fill the frame */
+.quote__shape{
+  position:absolute;
+  left:calc(-0.129 * var(--u));
+  top:calc(8.470 * var(--u));
+  width:calc(180 * var(--u));
+  height:calc(109 * var(--u));
+}
+.quote__shape--g1{mix-blend-mode:screen; filter:blur(calc(11.5 * var(--u)));}  /* Figma blur 23 */
+.quote__shape--g2{mix-blend-mode:screen; filter:blur(calc(5    * var(--u)));}  /* Figma blur 10 */
+.quote__backdrop{
+  position:absolute;
+  left:calc(-0.129 * var(--u));
+  top:calc(8.470 * var(--u));
+  width:calc(180 * var(--u));
+  height:calc(109 * var(--u));
+  -webkit-backdrop-filter:blur(calc(12 * var(--u)));
+  backdrop-filter:blur(calc(12 * var(--u)));
+  clip-path:url(#clip-testimonial-union);
+}
+
+/* avatar 24x24 @ (12,1) — deliberately breaks above the card's top edge */
+.quote__avatar{
+  position:absolute;
+  left:calc(12 * var(--u));
+  top:calc(1 * var(--u));
+  width:calc(24 * var(--u));
+  height:calc(24 * var(--u));
+  background:#FFD188;                       /* Figma 423:1612 frame fill */
+}
+.quote__avatarglow{                          /* 423:1613: #FFD188, screen, blur 4 */
+  position:absolute; inset:0;
+  background:#FFD188;
+  mix-blend-mode:screen;
+  filter:blur(calc(2 * var(--u)));
+}
+.quote__avatarimg{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+
+.quote__name,
+.quote__role,
+.quote__body{
+  position:absolute;
+  font-family:'MD Thermochrome',monospace;
+  letter-spacing:.09em;                      /* 1.08 / 12 */
+  color:#fff;
+}
+.quote__name{
+  left:calc(44 * var(--u)); top:calc(12 * var(--u));
+  width:calc(90 * var(--u)); height:calc(18 * var(--u));
+  font-weight:600; font-size:calc(12 * var(--u)); line-height:calc(18 * var(--u));
+  white-space:nowrap;
+}
+.quote__role{
+  left:calc(12 * var(--u)); top:calc(30 * var(--u));
+  width:calc(130 * var(--u)); height:calc(18 * var(--u));
+  font-weight:600; font-size:calc(12 * var(--u)); line-height:calc(18 * var(--u));
+  opacity:.5;
+  white-space:nowrap;
+}
+.quote__body{
+  left:calc(12 * var(--u)); top:calc(54 * var(--u));
+  width:calc(158 * var(--u)); height:calc(54 * var(--u));
+  font-weight:500; font-size:calc(12 * var(--u)); line-height:calc(18 * var(--u));
+  opacity:.7;
+}
+
+/* =====================================================================
+   OFFERINGS — Figma 427:3447, four 1920x1080 states stacked into one
+   scroll-driven sticky section:
+     0  425:2759  nothing expanded
+     1  425:1814  PRODUCT DESIGN expanded
+     2  425:2220  WEBSITE DESIGN expanded
+     3  425:2458  GTM COLLATERAL expanded
+   ===================================================================== */
+.off{
+  position:relative;
+  background:#141414;
+  /* one viewport of dwell per state */
+  height:400vh;
+}
+.off__panel{
+  position:sticky;
+  top:0;
+  height:100vh;
+  overflow:hidden;
+  isolation:isolate;
+  background:#141414;
+}
+
+/* Figma 425:2760 / 425:2761 — 691x681 @ blur 224. Both are #141414 on a
+   #141414 frame, so they are literally invisible; kept as a documented no-op
+   rather than silently dropped, since the designer may recolour them later. */
+
+/* ---- headline: OffBit DotBold 80/64 (0.8), ls -1%, #FFF1E9 ---------- */
+.off__head{
+  position:absolute;
+  left:calc(404 * var(--u));
+  top:calc(201 * var(--u));
+  width:calc(595 * var(--u));
+  height:calc(308 * var(--u));
+}
+.off__line{
+  position:absolute;
+  display:block;
+  margin:0;
+  font:700 calc(80 * var(--u))/calc(64 * var(--u)) 'OffBit Trial',monospace;
+  letter-spacing:-.01em;
+  color:#FFF1E9;
+  white-space:nowrap;
+}
+.off__line--1{left:0;                  top:calc(13  * var(--u)); opacity:.8}
+.off__line--2{left:0;                  top:calc(92  * var(--u)); opacity:.8}
+.off__line--3{left:calc(106*var(--u)); top:calc(165 * var(--u)); opacity:1}
+.off__line--4{left:calc(106*var(--u)); top:calc(244 * var(--u)); opacity:.8}
+.off__tm{
+  position:absolute;
+  left:calc(427 * var(--u));
+  top:0;
+  font:700 calc(20 * var(--u))/calc(16 * var(--u)) 'OffBit Trial',monospace;
+  letter-spacing:0;
+  color:#FFF1E9;
+}
+
+/* ---- blue chip ------------------------------------------------------
+   Exported as one raster: ~60 circuit vectors, a masked photo and several
+   SCREEN/LIGHTEN glows. The section fill is a flat #141414, so those blends
+   resolve to fixed pixels and bake exactly — hand-rebuilding them in CSS
+   could only be less accurate. 306x306 design px with 94/94.5 of glow bleed
+   around the 118x117 frame at (270,178). */
+.off__chip{
+  position:absolute;
+  left:calc(176 * var(--u));
+  top:calc(83.5 * var(--u));
+  width:calc(306 * var(--u));
+  height:calc(306 * var(--u));
+}
+.off__chip img{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  display:block;
+}
+/* the chip core sits dead centre of the export (50% / 49.5%) */
+/* The exported chip already carries Figma's own glow. Anything added here is
+   ON TOP of that, so it has to stay faint — the first pass at .85 peak bloomed
+   over the circuit traces that are the whole point of the asset. Measured
+   against the Figma render, the traces must stay legible at every phase. */
+.off__pulse{
+  position:absolute;
+  left:50%; top:49.5%;
+  width:calc(132 * var(--u));
+  height:calc(132 * var(--u));
+  margin-left:calc(-66 * var(--u));
+  margin-top:calc(-66 * var(--u));
+  border-radius:50%;
+  mix-blend-mode:screen;
+  filter:blur(calc(7 * var(--u)));
+  opacity:0;
+  pointer-events:none;
+  /* hollow centre so it reads as charge leaving the die along the traces,
+     not as a disc sitting on top of it */
+  background:radial-gradient(circle closest-side,
+    rgba(93,234,243,0)    46%,
+    rgba(93,234,243,.30)  66%,
+    rgba(51,207,185,.14)  82%,
+    rgba(51,207,185,0)   100%);
+  animation:chipPulse 3.6s cubic-bezier(.22,.61,.36,1) infinite;
+}
+.off__pulse--b{animation-delay:1.8s}
+/* slow breath on the die, so the ring reads as *emitted* rather than as an
+   unrelated ring floating over a static chip */
+.off__chipglow{
+  position:absolute;
+  left:50%; top:49.5%;
+  width:calc(56 * var(--u));
+  height:calc(56 * var(--u));
+  margin-left:calc(-28 * var(--u));
+  margin-top:calc(-28 * var(--u));
+  border-radius:50%;
+  mix-blend-mode:screen;
+  filter:blur(calc(8 * var(--u)));
+  background:radial-gradient(circle closest-side, rgba(93,234,243,.15), rgba(93,234,243,0) 100%);
+  animation:chipBreath 3.6s cubic-bezier(.37,0,.63,1) infinite;
+  pointer-events:none;
+}
+@keyframes chipPulse{
+  0%   {opacity:0;   transform:scale(.5)}
+  22%  {opacity:.36}
+  100% {opacity:0;   transform:scale(1)}     /* deliberately short throw */
+}
+@keyframes chipBreath{
+  0%,100%{opacity:.30; transform:scale(.96)}
+  46%    {opacity:.62; transform:scale(1.03)}
+}
+
+/* ---- offerings list — Figma 425:2898 @ (1140,495), v-stack gap 32 ---- */
+.off__list{
+  position:absolute;
+  left:calc(1140 * var(--u));
+  top:calc(495 * var(--u));
+  width:calc(400 * var(--u));
+}
+.off__item{
+  position:relative;
+  display:grid;
+  grid-template-columns:auto 1fr;
+  /* Figma: collapsed rows put the text column at x=40 behind a 24 icon (gap
+     16); expanded puts it at x=69 behind a 40 icon (gap 29). Not one gap. */
+  column-gap:calc(16 * var(--u));
+  align-items:start;
+  transition:column-gap .62s var(--expo);
+  padding-bottom:calc(32 * var(--u));   /* the 32 auto-layout gap */
+  cursor:pointer;
+}
+.off__item:last-child{padding-bottom:0}
+.off__item:focus-visible{outline:calc(1 * var(--u)) solid var(--c); outline-offset:calc(6 * var(--u));}
+/* icon well: 24 collapsed -> 40 expanded (Figma 425:2940 vs 425:1971) */
+.off__ico{
+  position:relative;
+  width:calc(24 * var(--u));
+  height:calc(24 * var(--u));
+  border:calc(var(--icoStroke) * var(--u)) solid var(--c);
+  overflow:hidden;
+  flex:none;
+  transition:width .62s var(--expo), height .62s var(--expo), border-width .62s var(--expo);
+}
+.off__ico img{
+  position:absolute;
+  left:50%; top:50%;
+  width:calc(18 * var(--u));
+  height:calc(18 * var(--u));
+  transform:translate(-50%,-50%);
+  transition:width .62s var(--expo), height .62s var(--expo);
+}
+/* the SCREEN+blur duplicates Figma stacks behind every icon */
+.off__ico--g1,
+.off__ico--g2{position:absolute; inset:0; mix-blend-mode:screen; pointer-events:none;}
+.off__ico--g1{filter:blur(calc(var(--g1) * var(--u)));}
+.off__ico--g2{filter:blur(calc(var(--g2) * var(--u))); opacity:var(--g2o,1);}
+
+.off__title{
+  margin:0;
+  font:700 calc(32 * var(--u))/calc(32 * var(--u)) 'OffBit 101',monospace;
+  letter-spacing:-.01em;
+  color:#FFF1E9;
+  opacity:.7;
+  white-space:nowrap;
+  transition:opacity .62s var(--expo), padding-top .62s var(--expo);
+}
+/* Figma 425:1909 — MD Thermochrome Medium 16/24, ls 9%, 309 wide */
+.off__desc{
+  display:grid;
+  grid-template-rows:0fr;                 /* animatable collapse, no magic px */
+  opacity:0;
+  transform:translateY(calc(-6 * var(--u)));
+  transition:grid-template-rows .62s var(--expo), opacity .42s var(--expo),
+             transform .62s var(--expo);
+}
+.off__desc > span{
+  overflow:hidden;
+  display:block;
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.09em;
+  color:#FFF1E9;
+  opacity:.7;
+  /* 309 of text PLUS the 20 indent. Figma's text node is 309 wide and starts
+     at x=20, overflowing its 309 frame — so the indent must not be taken out
+     of the measure, or the copy wraps to three lines instead of two. */
+  width:calc(329 * var(--u));
+}
+/* Figma 425:1909 sits at x=20 inside its 309 frame, i.e. indented from the
+   title, and the frame starts 12 below the 44-tall title block. */
+.off__desc > span > em{
+  display:block; font-style:normal;
+  padding-top:calc(12 * var(--u));
+  padding-left:calc(20 * var(--u));
+}
+
+/* ---- active state --------------------------------------------------- */
+.off__item.is-on            {column-gap:calc(29 * var(--u));}
+.off__item.is-on .off__ico   {width:calc(40 * var(--u)); height:calc(40 * var(--u));}
+.off__item.is-on .off__ico img{width:calc(30 * var(--u)); height:calc(30 * var(--u));}
+/* expanded title sits in a 44-tall frame with the text at y=6 */
+.off__item.is-on .off__title {opacity:1; padding-top:calc(6 * var(--u));}
+.off__item.is-on .off__desc  {grid-template-rows:1fr; opacity:1; transform:none;}
+/* icon leads, copy follows — the stagger is what stops it feeling like a
+   single dumb height tween */
+.off__item.is-on .off__desc  {transition-delay:.06s, .12s, .06s;}
+
+/* =====================================================================
+   WORK SHOWCASE — Figma 433:3454. One sticky viewport per project; the
+   number, both text columns and the screen all re-key on each step.
+   ===================================================================== */
+.work{position:relative; background:#141414;}
+.work__panel{
+  position:sticky; top:0; height:100vh; overflow:hidden;
+  isolation:isolate; background:#141414;
+}
+/* No invented bloom here any more. The room light is Figma's own two glow
+   plates (433:3475 / 433:3476) below — a hardcoded orange radial was standing
+   in for them, which also meant it could not follow the screen colour. */
+
+/* ---- left rail ---- */
+.work__num{
+  position:absolute; left:calc(44 * var(--u)); top:calc(395 * var(--u));
+  width:calc(180 * var(--u)); height:calc(64 * var(--u));
+  font:700 calc(80 * var(--u))/calc(64 * var(--u)) 'OffBit Trial',monospace;
+  letter-spacing:-.01em; color:#FFF1E9; opacity:.7; white-space:nowrap;
+}
+/* Figma 433:3455 — tick + three rules, all 1px #FF5638 @ .5, baseline y=459.
+   The group is DOUBLED: 433:3456 crisp, and 433:3461 the same again at .7 on
+   SCREEN with blur 10 (-> CSS 5) for the bloom. Building only the crisp half
+   loses the glow entirely.
+   The whole rule is the scroll indicator and it travels VERTICALLY — it sweeps
+   the panel's own height (237..878) like a scan line as the five items advance,
+   rather than the tick sliding along it. */
+.work__rule{
+  position:absolute; left:calc(28 * var(--u));
+  /* starts exactly where Figma parks it (453) and only drifts 120 down */
+  top:calc((453 + var(--sp, 0) * 120) * var(--u));
+  width:calc(1856 * var(--u)); height:calc(11 * var(--u));
+  pointer-events:none;
+}
+.work__rule > div{position:absolute; inset:0;}
+.work__rule > div + div{opacity:.7; mix-blend-mode:screen; filter:blur(calc(5 * var(--u)));}
+.work__rule img{position:absolute; left:0; top:0;
+  width:calc(20.701 * var(--u)); height:calc(11 * var(--u)); opacity:.8;}
+.work__rule i{position:absolute; top:calc(6 * var(--u)); height:calc(1 * var(--u));
+  background:#FF5638; opacity:.5; display:block;}
+.work__rule i:nth-of-type(1){left:calc(10.647 * var(--u)); width:calc(340.681 * var(--u));}
+.work__rule i:nth-of-type(2){left:calc(351.326 * var(--u)); width:calc(1185.286 * var(--u));}
+.work__rule i:nth-of-type(3){left:calc(1536.612 * var(--u)); width:calc(319.388 * var(--u));}
+
+/* Rows are flowed, not absolutely pinned. Figma's x offsets (0/94, 0/92) come
+   off hand-sized text boxes that are ~6px wider than the glyphs actually
+   measure, so pinning to them let the second tag collide with the first once
+   the real text ran long. The 8px gap is the true Figma gap between them. */
+.work__tags{position:absolute; left:calc(39 * var(--u)); top:calc(477 * var(--u));
+  width:calc(300 * var(--u)); height:calc(48 * var(--u));}
+.work__tags > div{
+  display:flex; gap:calc(8 * var(--u)); height:calc(24 * var(--u)); align-items:center;
+}
+.work__tags span{
+  height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em; color:#FFAF2F; white-space:nowrap;
+  text-shadow:0 0 calc(4 * var(--u)) rgba(255,175,47,.55);
+}
+
+.work__url{
+  position:absolute; left:calc(39 * var(--u)); top:calc(587 * var(--u));
+  height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.09em; color:#FFF1E9; opacity:.7; white-space:nowrap;
+}
+
+/* ---- the LED panel ---- */
+.work__tv{position:absolute; left:calc(502 * var(--u)); top:calc(237 * var(--u));
+  width:calc(912 * var(--u)); height:calc(641 * var(--u));}
+.work__tvimg{position:absolute; inset:0; width:100%; height:100%;}
+
+/* Figma 433:3486 / 433:3487 'Vector 67'/'Vector 68' — 26x25 @ (1231.5,725),
+   two stacked copies, SCREEN, blur 4 -> 2. These are the piece glow: small
+   glowy vectors sitting ON the asset, not a halo around it.
+   Painted as a mask over a solid fill instead of the baked SVG so the colour
+   can follow the screen; the SVG's own alpha ramp still shapes the falloff. */
+.work__piece{
+  position:absolute;
+  left:calc(1229.5 * var(--u)); top:calc(723 * var(--u));
+  width:calc(34 * var(--u)); height:calc(33 * var(--u));
+  background:var(--piece, #FF5826);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg%20width=%2234%22%20height=%2233%22%20viewBox=%220%200%2034%2033%22%20fill=%22none%22%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg%20style=%22mix-blend-mode:screen%22%3E%3Cpath%20d=%22M15.5%207H4V29L30%2024.5V6L16.5%204L15.5%207Z%22%20fill=%22url(%23paint0_linear_433_3486)%22/%3E%3C/g%3E%3Cdefs%3E%3ClinearGradient%20id=%22paint0_linear_433_3486%22%20x1=%2217%22%20y1=%224%22%20x2=%2217%22%20y2=%2229%22%20gradientUnits=%22userSpaceOnUse%22%3E%3Cstop%20stop-color=%22%23FF5926%22/%3E%3Cstop%20offset=%221%22%20stop-color=%22%23FF8226%22%20stop-opacity=%220%22/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg%20width=%2234%22%20height=%2233%22%20viewBox=%220%200%2034%2033%22%20fill=%22none%22%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cg%20style=%22mix-blend-mode:screen%22%3E%3Cpath%20d=%22M15.5%207H4V29L30%2024.5V6L16.5%204L15.5%207Z%22%20fill=%22url(%23paint0_linear_433_3486)%22/%3E%3C/g%3E%3Cdefs%3E%3ClinearGradient%20id=%22paint0_linear_433_3486%22%20x1=%2217%22%20y1=%224%22%20x2=%2217%22%20y2=%2229%22%20gradientUnits=%22userSpaceOnUse%22%3E%3Cstop%20stop-color=%22%23FF5926%22/%3E%3Cstop%20offset=%221%22%20stop-color=%22%23FF8226%22%20stop-opacity=%220%22/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E") center/contain no-repeat;
+  mix-blend-mode:screen;
+  filter:blur(calc(2 * var(--u)));
+  pointer-events:none;
+  transition:background .5s var(--ease);
+}
+/* Figma 433:3474 — 866x453 @ (23,28) inside the panel group, r2 */
+.work__screen{
+  position:absolute;
+  left:calc(23 * var(--u)); top:calc(28 * var(--u));
+  width:calc(866 * var(--u)); height:calc(453 * var(--u));
+  border-radius:calc(2 * var(--u));
+  overflow:hidden;
+  background:#000;
+}
+/* 433:3616 'screen item (replacable)' — colour stands in for the real work */
+.work__slide{
+  position:absolute; inset:0;
+  display:grid; place-items:center;
+  background:var(--slide);
+  opacity:0; visibility:hidden;
+}
+.work__slide.is-on{opacity:1; visibility:visible;}
+.work__slide b{
+  font:700 calc(44 * var(--u))/calc(44 * var(--u)) 'OffBit 101',monospace;
+  letter-spacing:-.01em; color:rgba(0,0,0,.62); text-align:center;
+}
+/* 433:3475 / 433:3476 — the two glow plates. They sit ABOVE the panel photo
+   and BELOW the slide, so all that shows is the spill around the screen; that
+   spill is what lights the bezel. Deliberately NOT inside .work__screen, which
+   clips. Figma blur 260 and 20 -> 130 / 10 by the usual halving.
+   --glowc is re-keyed per slide from the screen's own colour, so the room light
+   follows the work instead of staying locked to the orange of item 001. */
+.work__glow{
+  position:absolute;
+  left:calc(23 * var(--u)); top:calc(28 * var(--u));
+  width:calc(866 * var(--u)); height:calc(453 * var(--u));
+  background:var(--glowc, linear-gradient(90deg,#FF5A27,#FF4F19));
+  mix-blend-mode:screen;
+  pointer-events:none;
+  transition:background .5s var(--ease);
+}
+.work__glow--far { opacity:.4; filter:blur(calc(130 * var(--u)));}
+.work__glow--near{ filter:blur(calc(10 * var(--u)));}
+
+/* 433:3485 — the LED grid, LINEAR_DODGE @ .7, sits OVER the screen content */
+.work__grid{
+  position:absolute; left:calc(23 * var(--u)); top:calc(28 * var(--u));
+  width:calc(866 * var(--u)); height:calc(453 * var(--u));
+  opacity:.7; mix-blend-mode:screen; mix-blend-mode:plus-lighter;
+  pointer-events:none;
+}
+/* --- the broken-row boot fill ---
+   Shutters over the screen, one per row. Each clears on its own delay in a
+   deliberately non-sequential order, so the picture assembles in broken bands
+   instead of wiping top-to-bottom. Delays are written by JS into --d. */
+.work__rows{position:absolute; inset:0; pointer-events:none;}
+.work__rows u{
+  position:absolute; left:0; width:100%;
+  background:#0A0A0A;
+  transform-origin:left center;
+  transition:opacity .18s linear var(--d), transform .34s var(--expo) var(--d);
+}
+.work__screen.is-filling .work__rows u{opacity:0; transform:scaleX(1.02);}
+
+/* ---- right rail ---- */
+.work__head{
+  position:absolute; left:calc(1425 * var(--u)); top:calc(357 * var(--u));
+  width:calc(463 * var(--u)); height:calc(96 * var(--u));
+  margin:0;
+  font:700 calc(32 * var(--u))/calc(32 * var(--u)) 'OffBit Trial',monospace;
+  letter-spacing:-.01em; color:#FFF1E9;
+}
+.work__desc{
+  position:absolute; left:calc(1429 * var(--u)); top:calc(467 * var(--u));
+  width:calc(299 * var(--u)); height:calc(72 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.09em; color:#FFF1E9; opacity:.7;
+}
+/* VIEW PROJECT — Figma 433:3561. Same three-layer union recipe as CONTACT but
+   in #272BFF, plus a detached 6x25 tab at x=1485. Was hand-faked as a flat
+   gradient box before; this is the measured build. */
+.work__view{
+  position:absolute; left:calc(1497 * var(--u)); top:calc(587 * var(--u));
+  width:calc(145 * var(--u)); height:calc(24 * var(--u));
+  text-decoration:none;
+}
+.work__view__shape{                     /* union: node 144.6x30.2 @ (0,-2), 0.5 export gutter */
+  position:absolute;
+  left:calc(-0.5 * var(--u)); top:calc(-2.5 * var(--u));
+  width:calc(146 * var(--u)); height:calc(32 * var(--u));
+}
+.work__view__shape--g1{opacity:.7; mix-blend-mode:screen; filter:blur(calc(15 * var(--u)));}
+.work__view__shape--g2{mix-blend-mode:screen; filter:blur(calc(2 * var(--u)));}
+/* Rectangle 40027 — 6x25 @ (1485,588), r2, stroke #272BFF@.5, fill #272BFF@.08 */
+.work__view__tab{
+  position:absolute;
+  left:calc(-12 * var(--u)); top:calc(1 * var(--u));
+  width:calc(6 * var(--u)); height:calc(25 * var(--u));
+  border-radius:calc(2 * var(--u));
+  border:calc(1 * var(--u)) solid rgba(39,43,255,.5);
+  background:rgba(39,43,255,.08);
+}
+.work__view__num,
+.work__view__label{
+  position:absolute; top:0; height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em; color:#fff; white-space:nowrap;
+}
+.work__view__num  {left:calc(6  * var(--u)); width:calc(23  * var(--u));}
+.work__view__label{left:calc(33 * var(--u)); width:calc(106 * var(--u));}
+.work__nav{
+  position:absolute; left:calc(1744 * var(--u)); top:calc(587 * var(--u));
+  width:calc(140 * var(--u)); height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em; color:#FFF1E9;
+}
+/* laid out, not pinned — Figma has PREV 0-50, slash 65-72, NEXT 87-140,
+   i.e. a 15 gap either side of the slash. Pinning left the slash sitting on
+   top of PREV as soon as the rendered text differed from the node width. */
+.work__nav{display:flex; align-items:center; gap:calc(15 * var(--u));}
+.work__nav button{
+  height:calc(24 * var(--u));
+  background:none; border:0; padding:0; cursor:pointer; color:inherit;
+  font:inherit; letter-spacing:inherit; opacity:.7; white-space:nowrap;
+  transition:opacity .2s var(--ease);
+}
+.work__nav button:hover{opacity:1}
+.work__nav button:disabled{opacity:.25; cursor:default}
+.work__nav .s{opacity:.4}
+
+/* ---- bottom-left terminal block ---- */
+.work__proj{
+  position:absolute; left:calc(36 * var(--u)); top:calc(810 * var(--u));
+  height:calc(24 * var(--u)); opacity:.6;
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.09em; white-space:nowrap;
+  background:linear-gradient(180deg,#FF5409,#FF3907);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.work__ask{
+  position:absolute; left:calc(36 * var(--u)); top:calc(848 * var(--u));
+  height:calc(24 * var(--u)); opacity:.4; color:#FFF1E9;
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.09em; white-space:nowrap;
+}
+.work__list{
+  position:absolute; left:calc(36 * var(--u)); top:calc(878 * var(--u));
+  width:calc(146 * var(--u)); height:calc(114 * var(--u));
+}
+.work__list a{
+  position:absolute; left:0; height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.09em; color:#FFF1E9; opacity:.75;
+  text-decoration:none; white-space:nowrap;
+  transition:opacity .2s var(--ease), color .2s var(--ease);
+}
+.work__list a:hover{opacity:1; color:#FFAF2F}
+.work__list a:nth-child(1){top:0}
+.work__list a:nth-child(2){top:calc(30 * var(--u))}
+.work__list a:nth-child(3){top:calc(60 * var(--u))}
+.work__list a:nth-child(4){top:calc(90 * var(--u))}
+/* EXPLORE ALL reuses the DECK bracket treatment at its own width (107) */
+.work__explore{
+  position:absolute; left:calc(36 * var(--u)); top:calc(1008 * var(--u));
+  width:calc(107 * var(--u)); height:calc(24 * var(--u));
+  text-decoration:none;
+}
+.work__explore .btn-deck__label{left:calc(8 * var(--u)); width:calc(91 * var(--u));}
+.work__explore .btn-deck__brk--r{left:calc(104.5 * var(--u));}
+.work__explore:hover .btn-deck__brk--l{left:calc(-4 * var(--u));}
+.work__explore:hover .btn-deck__brk--r{left:calc(108.5 * var(--u));}
+
+/* =====================================================================
+   PRICING — Figma 434:3855
+   ===================================================================== */
+.price{position:relative; height:100vh; overflow:hidden; background:#141414; isolation:isolate;}
+/* the photo plate (434:3929) is gone from the Figma frame — the cards now sit
+   straight on the section ground */
+/* 434:3933 — the two cards, 1096x405 each at (370,126) and (370,535).
+   They deliberately overhang the plate top and bottom. */
+.price__cards{
+  position:absolute;
+  left:calc(370 * var(--u)); top:calc(126 * var(--u));
+  width:calc(1096 * var(--u)); height:calc(814 * var(--u));
+}
+/* cornerSmoothing is 1.0, so these are squircles — border-radius would give a
+   circular arc and read visibly tighter at the 24px corners. The path is
+   generated from figma-squircle's corner math and carries the fill plus the
+   1px INSIDE gradient stroke (drawn at width 2 and clipped to itself, since
+   SVG strokes are centred and have no 'inside' mode). */
+.price__card{
+  position:absolute; left:0;
+  width:calc(1096 * var(--u)); height:calc(405 * var(--u));
+}
+.price__card:nth-child(1){top:0}
+.price__card:nth-child(2){top:calc(409 * var(--u))}
+.price__card > img{position:absolute; inset:0; width:100%; height:100%;}
+/* The wave grid paints the card SURFACE, not an overlay on it — the cubes carry
+   the card's own gradient as their base colour and the scene background is that
+   same gradient, exactly as run-2 does it. That is load-bearing: the additive
+   bloom needs an opaque base to add onto, and a transparent canvas in screen
+   blend turns the near-black base tone into flat grey wash.
+   Consequences, both handled below: the canvas hides the card SVG's 1px inside
+   stroke (re-laid on top as .price__edge), and it must be clipped to the same
+   squircle. An SVG mask scales with the element, which clip-path:path() in
+   design px could never do. */
+.price__cv{
+  position:absolute; inset:0; width:100%; height:100%;
+  -webkit-mask-size:100% 100%; mask-size:100% 100%;
+  -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+  /* revealed only once a frame has actually rendered, so a missing WebGL
+     context or a blocked three.js import leaves the plain card SVG standing
+     rather than a black hole */
+  opacity:0; transition:opacity .45s ease;
+}
+.price__cv.is-live{opacity:1}
+.price__card:nth-child(1) .price__cv{
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%201096%20405%22%20preserveAspectRatio=%22none%22%3E%3Cpath%20d=%22M%201048%200%20c%2022.6274%200%2033.9411%200%2040.9706%207.0294%20a%2024%2024%200%200%201%200%200%20c%207.0294%207.0294%207.0294%2018.3431%207.0294%2040.9706%20L%201096%20397%20c%200%203.7712%200%205.6569%20-1.1716%206.8284%20a%204%204%200%200%201%20-0%200%20c%20-1.1716%201.1716%20-3.0572%201.1716%20-6.8284%201.1716%20L%208%20405%20c%20-3.7712%200%20-5.6569%200%20-6.8284%20-1.1716%20a%204%204%200%200%201%20-0%20-0%20c%20-1.1716%20-1.1716%20-1.1716%20-3.0572%20-1.1716%20-6.8284%20L%200%2048%20c%200%20-22.6274%200%20-33.9411%207.0294%20-40.9706%20a%2024%2024%200%200%201%200%20-0%20c%207.0294%20-7.0294%2018.3431%20-7.0294%2040.9706%20-7.0294%20Z%22%20fill=%22%23fff%22/%3E%3C/svg%3E");
+  mask-image:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%201096%20405%22%20preserveAspectRatio=%22none%22%3E%3Cpath%20d=%22M%201048%200%20c%2022.6274%200%2033.9411%200%2040.9706%207.0294%20a%2024%2024%200%200%201%200%200%20c%207.0294%207.0294%207.0294%2018.3431%207.0294%2040.9706%20L%201096%20397%20c%200%203.7712%200%205.6569%20-1.1716%206.8284%20a%204%204%200%200%201%20-0%200%20c%20-1.1716%201.1716%20-3.0572%201.1716%20-6.8284%201.1716%20L%208%20405%20c%20-3.7712%200%20-5.6569%200%20-6.8284%20-1.1716%20a%204%204%200%200%201%20-0%20-0%20c%20-1.1716%20-1.1716%20-1.1716%20-3.0572%20-1.1716%20-6.8284%20L%200%2048%20c%200%20-22.6274%200%20-33.9411%207.0294%20-40.9706%20a%2024%2024%200%200%201%200%20-0%20c%207.0294%20-7.0294%2018.3431%20-7.0294%2040.9706%20-7.0294%20Z%22%20fill=%22%23fff%22/%3E%3C/svg%3E");}
+.price__card:nth-child(2) .price__cv{
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%201096%20405%22%20preserveAspectRatio=%22none%22%3E%3Cpath%20d=%22M%201088%200%20c%203.7712%200%205.6569%200%206.8284%201.1716%20a%204%204%200%200%201%200%200%20c%201.1716%201.1716%201.1716%203.0572%201.1716%206.8284%20L%201096%20357%20c%200%2022.6274%200%2033.9411%20-7.0294%2040.9706%20a%2024%2024%200%200%201%20-0%200%20c%20-7.0294%207.0294%20-18.3431%207.0294%20-40.9706%207.0294%20L%2048%20405%20c%20-22.6274%200%20-33.9411%200%20-40.9706%20-7.0294%20a%2024%2024%200%200%201%20-0%20-0%20c%20-7.0294%20-7.0294%20-7.0294%20-18.3431%20-7.0294%20-40.9706%20L%200%208%20c%200%20-3.7712%200%20-5.6569%201.1716%20-6.8284%20a%204%204%200%200%201%200%20-0%20c%201.1716%20-1.1716%203.0572%20-1.1716%206.8284%20-1.1716%20Z%22%20fill=%22%23fff%22/%3E%3C/svg%3E");
+  mask-image:url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%201096%20405%22%20preserveAspectRatio=%22none%22%3E%3Cpath%20d=%22M%201088%200%20c%203.7712%200%205.6569%200%206.8284%201.1716%20a%204%204%200%200%201%200%200%20c%201.1716%201.1716%201.1716%203.0572%201.1716%206.8284%20L%201096%20357%20c%200%2022.6274%200%2033.9411%20-7.0294%2040.9706%20a%2024%2024%200%200%201%20-0%200%20c%20-7.0294%207.0294%20-18.3431%207.0294%20-40.9706%207.0294%20L%2048%20405%20c%20-22.6274%200%20-33.9411%200%20-40.9706%20-7.0294%20a%2024%2024%200%200%201%20-0%20-0%20c%20-7.0294%20-7.0294%20-7.0294%20-18.3431%20-7.0294%20-40.9706%20L%200%208%20c%200%20-3.7712%200%20-5.6569%201.1716%20-6.8284%20a%204%204%200%200%201%200%20-0%20c%201.1716%20-1.1716%203.0572%20-1.1716%206.8284%20-1.1716%20Z%22%20fill=%22%23fff%22/%3E%3C/svg%3E");}
+/* the stroke half of the card SVG, back on top of the canvas */
+.price__edge{pointer-events:none;}
+
+/* =====================================================================
+   FOOTER — Figma 434:3617 (1920x1080 frame, #141414, clips)
+   ===================================================================== */
+.ftr{position:relative; height:100vh; overflow:hidden; background:#141414; isolation:isolate;}
+/* The starfield owns the whole plate and is the only thing that paints the
+   ground; everything else rides above it. Opaque (clears to the frame fill)
+   rather than alpha — additive star sprites want something to add onto, and it
+   saves the compositor a transparent layer the size of the viewport. */
+.ftr__stars{position:absolute; inset:0; width:100%; height:100%; display:block;}
+.ftr__stage{
+  position:absolute; left:0; top:0;
+  width:calc(1920 * var(--u)); height:calc(1080 * var(--u));
+}
+/* Both HUD states (455:4267 rest, 455:4528 full) exist only as the warped
+   render — there is no flat copy in the DOM. The lens derives their boxes from
+   the stage rect and the design numbers rather than measuring elements. */
+.ftr__lens{position:absolute; inset:0; width:100%; height:100%; display:block; pointer-events:none;}
+
+/* 455:4656 — 670x393 @ (624,337). The red 10% rect in Figma is a HIT AREA, not
+   artwork, so it paints nothing. The CTA lives inside it on purpose: as a child
+   it cannot fire pointerleave on the way in, which an overlapping sibling would
+   do every time the cursor crossed onto the button. */
+.ftr__zone{
+  position:absolute;
+  left:calc(624 * var(--u)); top:calc(337 * var(--u));
+  width:calc(670 * var(--u)); height:calc(393 * var(--u));
+}
+.ftr__zone .btn-contact--ftr{left:calc(280 * var(--u)); top:calc(191 * var(--u));}
+
+/* ---- state 1 furniture: everything that evacuates on hover ---- */
+/* 455:4418 — OffBit DotBold 80/64, ls -0.8, #FFF1E9 (line 1 at 50%) */
+.ftr__title{position:absolute; left:0; top:0; width:calc(1920 * var(--u)); height:calc(1080 * var(--u));}
+.ftr__tl{
+  position:absolute; white-space:nowrap;
+  font:700 calc(80 * var(--u))/calc(64 * var(--u)) 'OffBit Trial',monospace;
+  letter-spacing:calc(-0.8 * var(--u));
+  color:#FFF1E9;
+}
+.ftr__tl--1{left:calc(674 * var(--u)); top:calc(182 * var(--u)); opacity:.5;}
+.ftr__tl--2{left:calc(835 * var(--u)); top:calc(266 * var(--u));}
+.ftr__tl img{position:absolute; width:calc(9 * var(--u)); height:calc(9 * var(--u));}
+.ftr__tl--1 img{left:calc(563 * var(--u)); top:calc(43 * var(--u));}
+.ftr__tl--2 img{left:calc(241 * var(--u)); top:calc(44 * var(--u));}
+
+/* 455:4419 — 490x24 @ (715,883); the nav's own bracket button, reused.
+   The nav version is hard-coded to one 78px width; these three are 78/86/53,
+   so --bw drives the box AND the right bracket (rest and hover) instead of
+   three sets of magic numbers. Scoped to the footer — the nav is untouched. */
+.ftr__links{position:absolute; left:calc(715 * var(--u)); top:calc(883 * var(--u));
+  width:calc(490 * var(--u)); height:calc(24 * var(--u));}
+.ftr__links .btn-deck{position:absolute; top:0; width:calc(var(--bw) * var(--u));}
+.ftr__links .btn-deck .btn-deck__brk--r{left:calc((var(--bw) - 2.5) * var(--u));}
+.ftr__links .btn-deck:hover .btn-deck__brk--r,
+.ftr__links .btn-deck:focus-visible .btn-deck__brk--r{left:calc((var(--bw) + 1.5) * var(--u));}
+.ftr__links .btn-deck:nth-of-type(1){--bw:78; left:0;}
+.ftr__links .btn-deck:nth-of-type(2){--bw:86; left:calc(198 * var(--u));}
+.ftr__links .btn-deck:nth-of-type(3){--bw:53; left:calc(421 * var(--u));}
+.ftr__links .btn-deck:nth-of-type(1) .btn-deck__label{left:calc(15 * var(--u)); width:calc(47 * var(--u));}
+.ftr__links .btn-deck:nth-of-type(2) .btn-deck__label{left:calc(8  * var(--u)); width:calc(70 * var(--u));}
+.ftr__links .btn-deck:nth-of-type(3) .btn-deck__label{left:calc(8  * var(--u)); width:calc(37 * var(--u));}
+
+/* 455:4420-4422 — MD Thermochrome Medium 16/24, ls .96.
+   Anchored to the BOTTOM of the section, not to design y. The stage is
+   1080*--u tall and the section is 100vh, so on anything shorter than 16:9 the
+   design position (y=1044) lands past the clip and the row is never seen. */
+.ftr__meta{
+  position:absolute; bottom:calc(12 * var(--u)); height:calc(24 * var(--u));
+  font:500 calc(16 * var(--u))/calc(24 * var(--u)) 'MD Thermochrome',monospace;
+  letter-spacing:.06em; text-transform:uppercase; color:#fff; white-space:nowrap;
+}
+.ftr__meta--l{left:calc(12   * var(--u)); opacity:.6;}
+.ftr__meta--c{left:calc(870  * var(--u));}
+.ftr__meta--r{left:calc(1707 * var(--u)); opacity:.7;}
+
+/* ---- the evacuation ----
+   Everything leaves along the axis it sits on, so the screen reads as being
+   cleared by the HUD rather than as a set of elements fading out together:
+   the title lifts, the footer row sinks, and both blur as they go. Staggered
+   so the eye follows the sweep. Reverse (settling back in) is slower — a HUD
+   snaps to alert and relaxes out of it. */
+.ftr__tl, .ftr__links .btn-deck, .ftr__meta{
+  transition:opacity .34s var(--ease) .12s,
+             transform .62s var(--expo) .12s,
+             filter .34s var(--ease) .12s;
+}
+.ftr.is-open .ftr__tl,
+.ftr.is-open .ftr__links .btn-deck,
+.ftr.is-open .ftr__meta{
+  opacity:0; filter:blur(calc(4 * var(--u)));
+  transition-delay:0s, 0s, 0s;
+  transition-duration:.26s, .44s, .26s;
+  pointer-events:none;
+}
+.ftr.is-open .ftr__tl--1{transform:translateY(calc(-58 * var(--u)));}
+.ftr.is-open .ftr__tl--2{transform:translateY(calc(-44 * var(--u)));}
+.ftr.is-open .ftr__meta{transform:translateY(calc(26 * var(--u)));}
+.ftr.is-open .ftr__links .btn-deck{transform:translateY(calc(34 * var(--u)));}
+/* stagger, so the three links peel away left to right */
+.ftr.is-open .ftr__links .btn-deck:nth-of-type(2){transition-delay:.03s;}
+.ftr.is-open .ftr__links .btn-deck:nth-of-type(3){transition-delay:.06s;}
+.ftr.is-open .ftr__tl--2{transition-delay:.04s;}
+.ftr.is-open .ftr__meta--c{transition-delay:.03s;}
+.ftr.is-open .ftr__meta--r{transition-delay:.06s;}
+
+/* ---- the shared chrome clears out with it ----
+   The logo, nav and agent bar are position:fixed inside .chrome, which is a
+   SIBLING of the footer — no descendant selector can reach them from
+   .ftr.is-open, so the state is mirrored onto <body>.
+   Each leaves toward the edge it is pinned to (the two top items lift, the
+   bottom-right one sinks) on the same curves as the footer's own furniture, so
+   the whole screen reads as being cleared by one motion. */
+.logo, .nav, .agent{
+  transition:opacity .34s var(--ease) .12s,
+             transform .62s var(--expo) .12s,
+             filter .34s var(--ease) .12s;
+}
+body.hud-open .logo,
+body.hud-open .nav,
+body.hud-open .agent{
+  opacity:0; filter:blur(calc(3 * var(--u)));
+  transition-duration:.26s, .44s, .26s;
+  transition-delay:0s, 0s, 0s;
+  pointer-events:none;                  /* nothing invisible stays clickable */
+}
+body.hud-open .logo{transform:translateY(calc(-26 * var(--u)));}
+body.hud-open .nav {transform:translateY(calc(-26 * var(--u))); transition-delay:.04s, .04s, .04s;}
+body.hud-open .agent{transform:translateY(calc(30 * var(--u))); transition-delay:.07s, .07s, .07s;}
+
+
+/* 434:4112 — 113x24 @ (904,528), i.e. dead centre of the plate. Same union
+   component as the nav button (identical path), so it inherits the whole glow
+   stack; only the box, the label and the face gradient id differ. */
+.btn-contact--ftr{
+  left:calc(904 * var(--u)); top:calc(528 * var(--u));
+  width:calc(113 * var(--u));
+}
+/* 434:4122 — Semibold 16/24, ls 0.96 (=.06em), x=8 inside the frame */
+.btn-contact--ftr .btn-contact__label{
+  left:calc(8 * var(--u)); width:calc(97 * var(--u)); font-weight:600;
+}
+#gBookFace .cf-a{stop-color:#FF4208; stop-opacity:.27;
+  transition:stop-color .18s var(--ease), stop-opacity .18s var(--ease);}
+#gBookFace .cf-b{stop-color:#FF5A27; stop-opacity:.8;
+  transition:stop-color .18s var(--ease), stop-opacity .18s var(--ease);}
+.btn-contact--ftr:hover #gBookFace .cf-a,
+.btn-contact--ftr:focus-visible #gBookFace .cf-a{stop-opacity:.7;}
+.btn-contact--ftr:hover #gBookFace .cf-b,
+.btn-contact--ftr:focus-visible #gBookFace .cf-b{stop-color:#FF4027; stop-opacity:1;}
+
+@media (prefers-reduced-motion: reduce){
+  *{transition-duration:.01ms !important; animation-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<!-- objectBoundingBox clip paths: normalised 0..1 copies of the union
+     outlines so backdrop-filter stays clipped to the shape at any scale -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<clipPath id="clip-contact-union" clipPathUnits="objectBoundingBox"><path d="M0.990505 0.158633C0.993712 0.17026 0.995495 0.185719 0.995495 0.201797V0.828172C0.995495 0.862656 0.987441 0.890625 0.977505 0.890672L0.419921 0.893413C0.414455 0.893437 0.409287 0.902072 0.405874 0.916881L0.401806 0.934528C0.398387 0.949362 0.393209 0.957997 0.387733 0.957997H0.03449C0.029712 0.957997 0.025129 0.951412 0.02175 0.939694L0.009932 0.8987C0.009335 0.896631 0.008526 0.895472 0.007683 0.895478C0.005928 0.895487 0.004505 0.890559 0.004505 0.884475V0.082905C0.004505 0.048424 0.012555 0.020457 0.022496 0.020405L0.943405 0.015625C0.948333 0.015599 0.953054 0.022588 0.956459 0.034961L0.990505 0.158633Z"/></clipPath>
+<clipPath id="clip-agentbar-union" clipPathUnits="objectBoundingBox"><path d="M0.993387 0.220555C0.996313 0.242441 0.997942 0.271537 0.997942 0.301797V0.808824C0.997942 0.873797 0.990572 0.926471 0.981481 0.926471H0.10033C0.096999 0.926471 0.093849 0.937294 0.091769 0.955882C0.089688 0.974471 0.086538 0.985294 0.083208 0.985294H0.018165C0.014439 0.985294 0.010865 0.974715 0.00823 0.955882L0.004541 0.929518C0.004269 0.927565 0.003898 0.926471 0.003513 0.926471C0.002709 0.926471 0.002058 0.921815 0.002058 0.916071V0.145535C0.002058 0.118013 0.003408 0.091362 0.005873 0.070219L0.00741 0.057037C0.010537 0.030214 0.01517 0.014706 0.020056 0.014706H0.282705C0.28734 0.014706 0.291668 0.031261 0.294239 0.058824C0.296809 0.086386 0.301138 0.102941 0.305773 0.102941H0.970634C0.975132 0.102941 0.979432 0.116096 0.982539 0.139346L0.993387 0.220555Z"/></clipPath>
+<clipPath id="clip-testimonial-union" clipPathUnits="objectBoundingBox"><path d="M0.800217 0.079251C0.802306 0.084492 0.805872 0.087605 0.809672 0.087503L0.983706 0.08284C0.989867 0.082675 0.994933 0.090824 0.995 0.101002L1 0.913681C1.000033 0.919183 0.998572 0.924413 0.996017 0.927945L0.956656 0.982339C0.954667 0.985092 0.95215 0.986596 0.949556 0.986615L0.011823 0.991128C0.005679 0.991156 0.000686 0.982945 0.000679 0.972798L-0 0.088989C-0.000004 0.084815 0.000855 0.080764 0.002434 0.077504L0.036636 0.006888C0.038755 0.002513 0.041969 -0.000024 0.045361 0L0.764672 0.005047C0.768389 0.005073 0.771856 0.008172 0.7739 0.013302L0.800217 0.079251Z"/></clipPath>
+</defs></svg>
+
+<section class="hero">
+
+  <div class="hero__media">
+    <video class="hero__bg" src="assets/video/hero.mp4"
+           autoplay muted loop playsinline preload="auto"></video>
+
+    <!-- covers the logo morphing inside the TV; welded to the video, not the viewport -->
+    <div class="tv" aria-hidden="true">
+      <img class="tv__mark"    src="assets/svg/tv-logo.svg"      alt="">
+      <img class="tv__glow"    src="assets/svg/tv-logo-glow.svg" alt="">
+      <img class="tv__panel-a" src="assets/svg/tv-panel-a.svg"   alt="">
+      <img class="tv__panel-b" src="assets/svg/tv-panel-b.svg"   alt="">
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------- top bar -->
+
+  <div class="abs ticker">- RETREIVEING DATA FROM MAY 26 ... -</div>
+
+  <div class="abs wordmark">CNVRTLABS</div>
+
+
+  <!-- --------------------------------------------------------- headline -->
+  <h1 class="abs headline">
+    <span class="hl hl--1">
+      <span class="hl__text">SHIP
+STRONGER</span>
+      <img class="hl__dot" src="assets/svg/dot-mark.svg" alt="." width="9" height="9">
+    </span>
+    <span class="hl hl--2">
+      <span class="hl__text">SHIP
+FASTER</span>
+      <img class="hl__dot" src="assets/svg/dot-mark.svg" alt="." width="9" height="9">
+    </span>
+  </h1>
+
+  <!-- --------------------------------------------------------- sub copy -->
+  <div class="abs sub">
+    <span class="sub__arrow" aria-hidden="true">
+      <img class="sub__arrowimg" src="assets/svg/arrow.svg" alt="" width="15" height="17">
+      <img class="sub__arrowimg sub__arrowimg--g1" src="assets/svg/arrow.svg" alt="" width="15" height="17">
+      <img class="sub__arrowimg sub__arrowimg--g2" src="assets/svg/arrow.svg" alt="" width="15" height="17">
+    </span>
+    <p class="sub__copy">BUILD A NARRATIVE AND POSITIONING TO CREATE YOURSELVESBUILD A NARRATIVE AND POSITIONING TO CREATE YOURSELVES</p>
+  </div>
+
+
+  <!-- ------------------------------------------------------ testimonial -->
+  <figure class="abs quote">
+    <img class="quote__shape quote__shape--g1" src="assets/svg/testimonial-union.svg" alt="" width="180" height="109" aria-hidden="true">
+    <img class="quote__shape quote__shape--g2" src="assets/svg/testimonial-union.svg" alt="" width="180" height="109" aria-hidden="true">
+    <span class="quote__backdrop" aria-hidden="true"></span>
+    <img class="quote__shape" src="assets/svg/testimonial-union.svg" alt="" width="180" height="109" aria-hidden="true">
+
+    <span class="quote__avatar">
+      <span class="quote__avatarglow" aria-hidden="true"></span>
+      <img class="quote__avatarimg" src="assets/img/avatar.png" alt="" width="24" height="24">
+    </span>
+    <figcaption class="quote__name">AASHAY IBRAHM</figcaption>
+    <span class="quote__role">FOUNDER, SIGMA CITY</span>
+    <blockquote class="quote__body">BEST STUDIO OF ALL TIME. HAD THE TIME OF MY LIFE WORKING WITH THEM.</blockquote>
+  </figure>
+
+</section>
+
+<!-- =====================================================================
+     OFFERINGS  (Figma 427:3447)
+     ================================================================== -->
+<section class="off" id="offerings">
+  <div class="off__panel">
+
+
+
+    <!-- headline -->
+    <h2 class="off__head">
+      <span class="off__line off__line--1">CNVRTLABS<sup class="off__tm">TM</sup></span>
+      <span class="off__line off__line--2">FOCUSES ON</span>
+      <span class="off__line off__line--3">AGENT FIRST</span>
+      <span class="off__line off__line--4">EXPERIENCES.</span>
+    </h2>
+
+    <!-- blue chip + circuit-feed pulse -->
+    <div class="off__chip" aria-hidden="true">
+      <img src="assets/img/blue-chip.png" alt="">
+      <span class="off__chipglow"></span>
+      <span class="off__pulse"></span>
+      <span class="off__pulse off__pulse--b"></span>
+    </div>
+
+    <!-- offerings -->
+    <div class="off__list" role="list">
+      <div class="off__item" role="listitem" data-i="0"
+           style="--c:#7E70FF; --icoStroke:1.2; --g1:1.5; --g2:1.5; --g2o:0">
+        <span class="off__ico">
+          <img src="assets/svg/ico-spaceship.svg" alt="">
+          <span class="off__ico--g1"><img src="assets/svg/ico-spaceship.svg" alt=""></span>
+        </span>
+        <div>
+          <h3 class="off__title">PRODUCT DESIGN</h3>
+          <div class="off__desc"><span><em>NO COMPROMISE MARKETING WEBSITES THAT CONVEY YOUR VISION OF THE.</em></span></div>
+        </div>
+      </div>
+
+      <div class="off__item" role="listitem" data-i="1"
+           style="--c:#FF9F32; --icoStroke:2; --g1:11.5; --g2:11.5; --g2o:0">
+        <span class="off__ico">
+          <img src="assets/svg/ico-plant.svg" alt="">
+          <span class="off__ico--g1"><img src="assets/svg/ico-plant.svg" alt=""></span>
+        </span>
+        <div>
+          <h3 class="off__title">WEBSITE DESIGN</h3>
+          <div class="off__desc"><span><em>NO COMPROMISE MARKETING WEBSITES THAT CONVEY YOUR VISION OF THE.</em></span></div>
+        </div>
+      </div>
+
+      <div class="off__item" role="listitem" data-i="2"
+           style="--c:#E81764; --icoStroke:2; --g1:2.5; --g2:14.5; --g2o:.7">
+        <span class="off__ico">
+          <img src="assets/svg/ico-facehappy.svg" alt="">
+          <span class="off__ico--g1"><img src="assets/svg/ico-facehappy.svg" alt=""></span>
+          <span class="off__ico--g2"><img src="assets/svg/ico-facehappy.svg" alt=""></span>
+        </span>
+        <div>
+          <h3 class="off__title">GTM COLLATERAL</h3>
+          <div class="off__desc"><span><em>NO COMPROMISE MARKETING WEBSITES THAT CONVEY YOUR VISION OF THE.</em></span></div>
+        </div>
+      </div>
+    </div>
+
+
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     WORK SHOWCASE  (Figma 433:3454)
+     ================================================================== -->
+<section class="work" id="work">
+  <div class="work__panel">
+
+    <div class="work__num" id="wkNum">001</div>
+
+    <!-- 433:3455 — crisp group, then the same group again as the SCREEN bloom -->
+    <div class="work__rule" aria-hidden="true">
+      <div><img src="assets/svg/work-tick.svg" alt="" width="20" height="11"><i></i><i></i><i></i></div>
+      <div><img src="assets/svg/work-tick.svg" alt="" width="20" height="11"><i></i><i></i><i></i></div>
+    </div>
+
+    <div class="work__tags" id="wkTags">
+      <div><span>&lt;PRODUCT&gt;</span><span>&lt;LAUNCH VIDEO&gt;</span></div>
+      <div><span>&lt;WEBSITE&gt;</span><span>&lt;GTM&gt;</span></div>
+    </div>
+
+    <div class="work__url" id="wkUrl">https://abacor.com</div>
+
+    <div class="work__tv">
+      <img class="work__tvimg" src="assets/img/work-panel.png" alt="" aria-hidden="true">
+      <!-- glow plates: above the bezel, below the slide -->
+      <div class="work__glow work__glow--far"  id="wkGlowA" aria-hidden="true"></div>
+      <div class="work__glow work__glow--near" id="wkGlowB" aria-hidden="true"></div>
+      <div class="work__screen" id="wkScreen">
+        <!-- placeholder slides: flat colour stands in for the real work -->
+        <div class="work__slide" style="--slide:#FF5409"><b>ABACOR</b></div>
+        <div class="work__slide" style="--slide:#2CCEA7"><b>SUPERREACH</b></div>
+        <div class="work__slide" style="--slide:#7E70FF"><b>SIGMA CITY</b></div>
+        <div class="work__slide" style="--slide:#FFAF2F"><b>TOKENRAIN</b></div>
+        <div class="work__slide" style="--slide:#E81764"><b>HIGGSFIELD</b></div>
+        <div class="work__rows" id="wkRows" aria-hidden="true"></div>
+      </div>
+      <img class="work__grid" src="assets/img/work-grid.png" alt="" aria-hidden="true">
+      <!-- 433:3486/3487 — the piece glow, two stacked copies on the asset -->
+      <span class="work__piece" aria-hidden="true"></span>
+      <span class="work__piece" aria-hidden="true"></span>
+    </div>
+
+    <h2 class="work__head" id="wkHead">PRODUCT LAUNCH FOR THE LEADING AI NATIVE SOFTWARE FOR ACCOUNTANTS.</h2>
+    <p class="work__desc" id="wkDesc">NO COMPROMISE MARKETING WEBSITES THAT CONVEY YOUR VISION OF THE BRAND TO YOUR AUDIENCE&gt;</p>
+
+    <a class="work__view" href="#project">
+      <img class="work__view__shape work__view__shape--g1" src="assets/svg/view-union.svg" alt="" width="146" height="32" aria-hidden="true">
+      <img class="work__view__shape work__view__shape--g2" src="assets/svg/view-union.svg" alt="" width="146" height="32" aria-hidden="true">
+      <img class="work__view__shape" src="assets/svg/view-union.svg" alt="" width="146" height="32" aria-hidden="true">
+      <span class="work__view__tab" aria-hidden="true"></span>
+      <span class="work__view__num">[V]</span>
+      <span class="work__view__label">VIEW PROJECT</span>
+    </a>
+
+    <div class="work__nav">
+      <button class="p" id="wkPrev">&lt; PREV</button>
+      <span class="s">/</span>
+      <button class="n" id="wkNext">NEXT &gt;</button>
+    </div>
+
+    <div class="work__proj">cnvrtlabs/projects:</div>
+    <div class="work__ask">WHAT DO YOU WANNA SEE?</div>
+    <div class="work__list">
+      <a href="#">&gt; WEBSITE DESIGN</a>
+      <a href="#">&gt; PRODUCT DESIGN</a>
+      <a href="#">&gt; LAUNCH VIDEO</a>
+      <a href="#">&gt; BRANDING</a>
+    </div>
+
+    <a class="btn-deck work__explore" href="#all">
+      <span class="btn-deck__layer">
+        <img class="btn-deck__brk btn-deck__brk--l" src="assets/svg/bracket-left.svg" alt="" width="3" height="25">
+        <span class="btn-deck__label">EXPLORE ALL</span>
+        <img class="btn-deck__brk btn-deck__brk--r" src="assets/svg/bracket-right.svg" alt="" width="3" height="25">
+      </span>
+    </a>
+
+  </div>
+</section>
+
+<script type="module">
+/* ==================== PRICING — iridescent wave-grid ripple ====================
+   Straight port of RFL run-2.html SC.05b (itself franky-adl/3d-wave-grid, the
+   arkon wavy-cubes demo), in the "rainbow" mode that ran on run-2's black card.
+   Both cnvrt cards are black, so run-2's second mode (light card, orange crest)
+   is dropped and uMode/uColorHigh with it; every other constant and both shader
+   bodies are verbatim, because the algorithm is the whole effect:
+     - pointer trail uploaded as a DataTexture, sampled in the VERTEX shader
+     - per cube: gaussian window on the expanding wavefront * cos(freq*relDist)
+     - fade = exp(-age/fadeTime), never a hard cutoff  -> no tail popping off
+     - atten = 1/(1+dist*k)
+     - waveHeight /= max(totalWeight,1.0)  <- overlapping waves AVERAGE, not
+       stack; this is what makes it read cohesive instead of chaotic
+     - only vertices with position.y>0 displace -> the cube STRETCHES upward
+     - colour = mix(base, iridescent, height/maxHeight) in the fragment, so the
+       hue sweep is a property of the wave height, not an overlay
+   Gap is ~0.25px so the outlines are barely-there shading, never drawn borders.
+
+   three.js comes off the CDN, the same import run-2 uses. It is the one remote
+   dependency in this build; if it fails to load the cards simply stay as their
+   flat SVG (the canvas only un-hides once a frame has rendered). */
+(async()=>{
+  const wrap=document.getElementById("prCards"), sec=document.getElementById("pricing");
+  if(!wrap||!sec) return;
+  const cvs=Array.prototype.slice.call(wrap.querySelectorAll(".price__cv"));
+  if(!cvs.length) return;
+  let THREE; try{ THREE=await import("https://esm.sh/three@0.185.1"); }
+  catch(e){ console.warn("[prwave]",e); return; }
+  const REDUCE=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* run-2 authors this in ITS design space: a 1600px stage scaled to 100vw, so
+     one run-2 unit is 1/1600 of the viewport. cnvrt's stage is 1920, so a run-2
+     unit is 1.2 cnvrt px. Rather than rescale a dozen eye-tuned constants (and
+     drift), the wave zone is stated in run-2 units — the 1096x405 card is
+     913.33x337.5 of them — and every constant below stays as written. The
+     canvas stretches to the card, so the cell pitch lands on exactly the same
+     fraction of the viewport it occupies on run-2. */
+  const CARD_W=1096, CARD_H=405, DPX=1600/1920;
+  const ZW=CARD_W*DPX, ZH=CARD_H*DPX, PITCH=10.6, TILT=26*Math.PI/180, KZ=1/Math.cos(TILT);
+  const COLS=Math.round(ZW/PITCH), ROWS=Math.ceil(ZH/PITCH)+2, N=COLS*ROWS;
+  const CW=PITCH-0.18, CD=PITCH*KZ-0.18, CH=26;
+  const MAXT=64, SPEED=105, FREQ=0.0686, WIDTH=52.5, FADE=2.0, AMP=15, MAXH=15, JIT=3.5, SPACING=3.0;
+
+  const VERT_HEAD=
+    "varying float vHeight; varying vec2 vOff; varying vec3 vNrm;\n"+
+    "attribute vec2 aOffset;\n"+
+    "uniform sampler2D uTrailTexture; uniform int uTrailCount;\n"+
+    "uniform float uWaveSpeed,uWaveFreq,uWaveWidth,uFadeTime,uAmplitude,uJitter,uMaxHeight,uTimeV;\n"+
+    "vec2 hash2(vec2 p){ p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)));\n"+
+    "  return fract(sin(p)*43758.5453123)-0.5; }";
+  const VERT_BODY=
+    "vHeight=0.0; vOff=aOffset; vNrm=normal;\n"+
+    "if(position.y>0.0){\n"+
+    "  vec2 worldXZ=aOffset+hash2(aOffset)*uJitter;\n"+
+    "  float waveHeight=0.0, totalWeight=0.0;\n"+
+    "  for(int i=0;i<64;i++){\n"+
+    "    if(i>=uTrailCount) break;\n"+
+    "    vec4 td=texture2D(uTrailTexture, vec2((float(i)+0.5)/64.0,0.5));\n"+
+    "    float dist=length(worldXZ-td.rg);\n"+
+    "    float relDist=dist-uWaveSpeed*td.b;\n"+
+    "    float window=exp(-(relDist*relDist)/(uWaveWidth*uWaveWidth));\n"+
+    "    float fade=exp(-td.b/uFadeTime);\n"+
+    "    float atten=1.0/(1.0+dist*0.0057);\n"+
+    "    float weight=fade*window*atten*td.a;\n"+
+    "    waveHeight+=weight*cos(uWaveFreq*relDist);\n"+
+    "    totalWeight+=weight;\n"+
+    "  }\n"+
+    "  waveHeight/=max(totalWeight,1.0);\n"+
+    "  float dsp=clamp(waveHeight*uAmplitude,-uMaxHeight,uMaxHeight);\n"+
+    "  float breath=sin(worldXZ.x*0.021+worldXZ.y*0.015+uTimeV*0.75)*3.1\n"+
+    "             + sin(worldXZ.x*0.009-worldXZ.y*0.013+uTimeV*0.51)*2.1;\n"+
+    "  transformed.y+=dsp+breath; vHeight=dsp;\n"+
+    "}";
+  const FRAG_HEAD=
+    "varying float vHeight; varying vec2 vOff;\n"+
+    "varying vec3 vNrm;\n"+
+    "uniform vec3 uColorBase; uniform float uMaxHeight,uTime,uGlow,uTintPow,uDepth,uSide;\n"+
+    "vec3 hsv2rgb(vec3 c){ vec4 K=vec4(1.,2./3.,1./3.,3.);\n"+
+    "  vec3 pp=abs(fract(c.xxx+K.xyz)*6.-K.www);\n"+
+    "  return c.z*mix(K.xxx,clamp(pp-K.xxx,0.,1.),c.y); }";
+  const FRAG_CALC=
+    "float tH=clamp(vHeight/uMaxHeight,0.0,1.0);\n"+
+    // the iridescence: hue is driven by wave height, drifting slowly in time and
+    // across x, so a crest sweeps cyan -> blue -> violet -> pink as it rises
+    "vec3 high=hsv2rgb(vec3(fract(0.52+tH*0.72+uTime*0.05+vOff.x*0.0004),0.88,0.72));\n"+
+    "float tE=pow(tH,uTintPow);\n"+
+    // tH clamps at 0, so every trough resolved to uColorBase exactly and the only
+    // thing separating a depression from the flat grid was the lighting on its
+    // tilted normals — hence the washed, low-contrast depth. tD is the other
+    // half: 0 at rest, 1 at deepest.
+    "float tD=pow(clamp(-vHeight/uMaxHeight,0.0,1.0),0.85);\n"+
+    // The vertical WALL of each cube - the sliver of its own height that gets
+    // exposed as it rises on the breath/ripple. That wall is what visually
+    // separates one square from the next; the top faces are all the same shade.
+    // Object-space normal: y=+-1 on the top and bottom caps, 0 on every side
+    // wall, so `side` isolates exactly the exposed height. At rest the walls are
+    // sub-pixel, so this barely shows - it appears as the cells lift.
+    "float side=1.0-abs(vNrm.y);\n";
+
+  /* run-2's black card is #2D2D2D->#1F1F1F (midpoint #262626) with a cube base
+     of #282828 — the grid sits two levels above the gradient's midpoint, which
+     is what keeps the rest state reading as barely-there shading rather than as
+     a panel laid over the card. Same relationship, off each card's own stops. */
+  const hex=s=>[parseInt(s.slice(1,3),16),parseInt(s.slice(3,5),16),parseInt(s.slice(5,7),16)];
+  const baseOf=(t,b)=>{ const A=hex(t),B=hex(b);
+    return "#"+A.map((v,i)=>Math.min(255,Math.round((v+B[i])/2+2)).toString(16).padStart(2,"0")).join(""); };
+
+  function build(canvas){
+    const top=canvas.dataset.top, bot=canvas.dataset.bot;
+    const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true});
+    /* Buffer at the card's DESIGN size, not the zone's: 1:1 with CSS pixels at a
+       1920 viewport. The bloom is unaffected — its radius is fixed in render-
+       target texels and the targets are sized off ZW/ZH, i.e. locked to world
+       units exactly as on run-2 — so this only buys resolution. */
+    renderer.setSize(CARD_W,CARD_H,false);
+    renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+    renderer.setClearColor(0x000000,0);
+    const scene=new THREE.Scene();
+    // opaque background matching the CARD gradient exactly: an additive bloom
+    // needs something to add onto, and the card edge stays invisible because it
+    // is the card colour
+    (function(){ const bc=document.createElement("canvas"); bc.width=4; bc.height=128;
+      const bg=bc.getContext("2d"), lg2=bg.createLinearGradient(0,0,0,128);
+      lg2.addColorStop(0,top); lg2.addColorStop(1,bot);
+      bg.fillStyle=lg2; bg.fillRect(0,0,4,128);
+      const bt=new THREE.CanvasTexture(bc); bt.colorSpace=THREE.SRGBColorSpace;
+      scene.background=bt; })();
+    const cam=new THREE.OrthographicCamera(-ZW/2,ZW/2,ZH/2,-ZH/2,1,4000);
+    cam.position.set(0,Math.cos(TILT)*1400,Math.sin(TILT)*1400); cam.lookAt(0,0,0);
+    scene.add(new THREE.AmbientLight(0xffffff,1.05));
+    const key=new THREE.DirectionalLight(0xffffff,1.85); key.position.set(-150,300,220); scene.add(key);
+    const fill=new THREE.DirectionalLight(0xffffff,.55); fill.position.set(160,140,-180); scene.add(fill);
+
+    const trailData=new Float32Array(MAXT*4);
+    const trailTex=new THREE.DataTexture(trailData,MAXT,1,THREE.RGBAFormat,THREE.FloatType);
+    trailTex.needsUpdate=true;
+    const U={ uTrailTexture:{value:trailTex}, uTrailCount:{value:0}, uFadeTime:{value:FADE},
+              uWaveSpeed:{value:SPEED}, uWaveFreq:{value:FREQ}, uWaveWidth:{value:WIDTH},
+              uAmplitude:{value:AMP}, uJitter:{value:JIT}, uMaxHeight:{value:MAXH}, uGlow:{value:2.0},
+              uColorBase:{value:new THREE.Color(baseOf(top,bot))},
+              uTime:{value:0}, uTimeV:{value:0}, uTintPow:{value:2.6},
+              // a near-black card moves far less in absolute terms under a
+              // proportional cut than a light one, so the trough needs the
+              // deeper factor to read at all
+              uDepth:{value:0.55}, uSide:{value:0.38} };
+
+    const geo=new THREE.BoxGeometry(CW,CH,CD);
+    const off=new Float32Array(N*2);
+    const mat=new THREE.MeshPhongMaterial({color:0xffffff, shininess:6});
+    const VERT=(v)=>v
+        .replace("#include <common>","#include <common>\n"+VERT_HEAD)
+        .replace("#include <begin_vertex>","#include <begin_vertex>\n"+VERT_BODY);
+    mat.onBeforeCompile=(sh)=>{
+      Object.assign(sh.uniforms,U);
+      sh.vertexShader=VERT(sh.vertexShader);
+      sh.fragmentShader=sh.fragmentShader
+        .replace("#include <common>","#include <common>\n"+FRAG_HEAD)
+        .replace("#include <color_fragment>","#include <color_fragment>\n"+FRAG_CALC+
+          "diffuseColor.rgb=mix(uColorBase*(1.0-tD*uDepth),high,tE)*(1.0-side*uSide);")
+        .replace("#include <emissivemap_fragment>","#include <emissivemap_fragment>\n"+
+          "totalEmissiveRadiance += high*tE*uGlow*0.55;");
+    };
+    const mesh=new THREE.InstancedMesh(geo,mat,N);
+    const dummy=new THREE.Object3D();
+    for(let r=0,i=0;r<ROWS;r++)for(let c=0;c<COLS;c++,i++){
+      const x=(c-(COLS-1)/2)*PITCH, z=(r-(ROWS-1)/2)*PITCH*KZ;
+      off[i*2]=x; off[i*2+1]=z;
+      dummy.position.set(x,0,z); dummy.updateMatrix(); mesh.setMatrixAt(i,dummy.matrix);
+    }
+    geo.setAttribute("aOffset",new THREE.InstancedBufferAttribute(off,2));
+    mesh.instanceMatrix.needsUpdate=true; scene.add(mesh);
+
+    /* ---- bloom: the crests are re-rendered alone, blurred, and added back, so
+       the glow spreads BEYOND each tile and travels with the ripple instead of
+       being trapped inside the cube it belongs to. Hand-rolled (not
+       UnrealBloomPass) because a luminance threshold cannot isolate crests that
+       sit only a little above a dark card. ---- */
+    const glowMat=new THREE.MeshBasicMaterial({color:0xffffff});
+    glowMat.onBeforeCompile=(sh)=>{
+      Object.assign(sh.uniforms,U);
+      sh.vertexShader=VERT(sh.vertexShader);
+      sh.fragmentShader=sh.fragmentShader
+        .replace("#include <common>","#include <common>\n"+FRAG_HEAD)
+        .replace("#include <color_fragment>","#include <color_fragment>\n"+FRAG_CALC+
+          "diffuseColor.rgb=high*tE;");
+    };
+    const glowMesh=new THREE.InstancedMesh(geo,glowMat,N);
+    glowMesh.instanceMatrix=mesh.instanceMatrix;
+    const glowScene=new THREE.Scene(); glowScene.add(glowMesh);
+
+    /* Layered bloom. A real lens does not scatter at one radius: there is a
+       tight hot core, a mid halo, and a wide low-energy veil with a heavy tail.
+       So the glow is blurred at three scales (1/2, 1/4, 1/8 res) and summed with
+       rising weights toward the wider layers, plus a white-hot boost where the
+       core is strongest — bright sources bloom white in the middle with coloured
+       fringes. */
+    const quadCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+    const quadGeo=new THREE.PlaneGeometry(2,2);
+    const mkRT=(d)=>new THREE.WebGLRenderTarget(Math.round(ZW/d),Math.round(ZH/d),
+      {minFilter:THREE.LinearFilter,magFilter:THREE.LinearFilter});
+    const LV=[{d:2,r:1.0},{d:4,r:1.5},{d:8,r:2.2}].map(o=>({
+      d:o.d, r:o.r, src:mkRT(o.d), tmp:mkRT(o.d), out:mkRT(o.d) }));
+
+    const blurMat=new THREE.ShaderMaterial({
+      uniforms:{ tDiffuse:{value:null}, uDir:{value:new THREE.Vector2(1,0)},
+                 uTexel:{value:new THREE.Vector2(1,1)}, uRad:{value:1} },
+      vertexShader:"varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }",
+      fragmentShader:"uniform sampler2D tDiffuse; uniform vec2 uDir,uTexel; uniform float uRad; varying vec2 vUv;\n"+
+        "void main(){ vec4 c=vec4(0.);\n"+
+        "  float w[6]; w[0]=0.196; w[1]=0.175; w[2]=0.125; w[3]=0.071; w[4]=0.032; w[5]=0.011;\n"+
+        "  c+=texture2D(tDiffuse,vUv)*w[0];\n"+
+        "  for(int i=1;i<6;i++){ vec2 o=uDir*uTexel*float(i)*uRad;\n"+
+        "    c+=texture2D(tDiffuse,vUv+o)*w[i]; c+=texture2D(tDiffuse,vUv-o)*w[i]; }\n"+
+        "  gl_FragColor=c; }"
+    });
+    const blurQuad=new THREE.Mesh(quadGeo,blurMat), blurScene=new THREE.Scene(); blurScene.add(blurQuad);
+
+    const compMat=new THREE.ShaderMaterial({
+      uniforms:{ t0:{value:LV[0].out.texture}, t1:{value:LV[1].out.texture}, t2:{value:LV[2].out.texture},
+                 uW:{value:new THREE.Vector3(0.55,0.85,1.15)},
+                 uHot:{value:0.55}, uGain:{value:1.0} },
+      vertexShader:"varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }",
+      fragmentShader:"uniform sampler2D t0,t1,t2; uniform vec3 uW; uniform float uHot,uGain; varying vec2 vUv;\n"+
+        "void main(){\n"+
+        "  vec3 a=texture2D(t0,vUv).rgb, b=texture2D(t1,vUv).rgb, c=texture2D(t2,vUv).rgb;\n"+
+        "  vec3 sum=a*uW.x + b*uW.y + c*uW.z;\n"+
+        "  float core=dot(a,vec3(0.299,0.587,0.114));\n"+
+        "  sum += vec3(1.0)*core*core*uHot;\n"+          // white-hot centre, coloured fringes
+        "  gl_FragColor=vec4(sum*uGain,1.0); }",
+      transparent:true, blending:THREE.AdditiveBlending, depthTest:false, depthWrite:false
+    });
+    const compQuad=new THREE.Mesh(quadGeo,compMat), compScene=new THREE.Scene(); compScene.add(compQuad);
+
+    function blurInto(srcTex, lv){
+      blurMat.uniforms.uRad.value=lv.r;
+      blurMat.uniforms.uTexel.value.set(1/lv.src.width, 1/lv.src.height);
+      blurMat.uniforms.tDiffuse.value=srcTex; blurMat.uniforms.uDir.value.set(1,0);
+      renderer.setRenderTarget(lv.tmp); renderer.clear(); renderer.render(blurScene,quadCam);
+      blurMat.uniforms.tDiffuse.value=lv.tmp.texture; blurMat.uniforms.uDir.value.set(0,1);
+      renderer.setRenderTarget(lv.out); renderer.clear(); renderer.render(blurScene,quadCam);
+    }
+    function bloom(){
+      const oldAC=renderer.autoClear;
+      renderer.setClearColor(0x000000,1);
+      renderer.setRenderTarget(LV[0].src); renderer.clear(); renderer.render(glowScene,cam);
+      blurInto(LV[0].src.texture, LV[0]);
+      // each level feeds the next: successive downsample+blur = a wide, heavy-tailed falloff
+      for(let i=1;i<LV.length;i++){
+        blurMat.uniforms.uRad.value=1.0;
+        blurMat.uniforms.uTexel.value.set(1/LV[i-1].out.width, 1/LV[i-1].out.height);
+        blurMat.uniforms.tDiffuse.value=LV[i-1].out.texture; blurMat.uniforms.uDir.value.set(1,0);
+        renderer.setRenderTarget(LV[i].src); renderer.clear(); renderer.render(blurScene,quadCam);
+        blurInto(LV[i].src.texture, LV[i]);
+      }
+      renderer.setRenderTarget(null);
+      renderer.render(scene,cam);                 // base pass
+      renderer.autoClear=false;
+      renderer.render(compScene,quadCam);         // + layered glow
+      renderer.autoClear=oldAC;
+    }
+
+    const trail=[]; let last=null;
+    const zone=canvas.parentElement;
+    zone.addEventListener("pointermove",e=>{
+      const r=canvas.getBoundingClientRect(); if(!r.width)return;
+      const x=((e.clientX-r.left)/r.width-.5)*ZW, z=((e.clientY-r.top)/r.height-.5)*ZH*KZ;
+      let dd=0;
+      if(last){ dd=Math.hypot(x-last.x,z-last.z); if(dd<SPACING) return; } else { last={x,z}; return; }
+      if(trail.length>=MAXT) trail.shift();
+      trail.push({x,z,age:0,dd:Math.min(1.6,dd/12)});
+      last={x,z};
+    });
+    zone.addEventListener("pointerleave",()=>{ last=null; });
+
+    let prev=performance.now();
+    return function render(now){
+      const dt=Math.min(.05,(now-prev)/1000); prev=now;
+      const expiry=FADE*4;
+      for(let i=trail.length-1;i>=0;i--){ trail[i].age+=dt; if(trail[i].age>expiry) trail.splice(i,1); }
+      const cnt=Math.min(trail.length,MAXT);
+      for(let i=0;i<cnt;i++){ const tp=trail[i], o=i*4;
+        trailData[o]=tp.x; trailData[o+1]=tp.z; trailData[o+2]=tp.age; trailData[o+3]=tp.dd; }
+      trailTex.needsUpdate=true; U.uTrailCount.value=cnt; U.uTime.value=now/1000; U.uTimeV.value=now/1000;
+      bloom();
+      canvas.classList.add("is-live");
+    };
+  }
+
+  let waves; try{ waves=cvs.map(build); }
+  catch(e){ console.warn("[prwave]",e); return; }          // no WebGL context
+  if(REDUCE){ const n=performance.now(); waves.forEach(w=>w(n)); return; }
+  let inview=false;
+  new IntersectionObserver(es=>{ inview=es[es.length-1].isIntersecting; },{rootMargin:"140px"}).observe(sec);
+  (function tick(now){ if(inview&&!document.hidden) waves.forEach(w=>w(now)); requestAnimationFrame(tick); })(performance.now());
+})();
+</script>
+
+<!-- =====================================================================
+     PRICING  (Figma 434:3855)
+     ================================================================== -->
+<section class="price" id="pricing">
+  <!-- data-top/-bot are the card SVG's own fill stops; the wave grid reads them
+       so its background and cube base tone are the card, not an approximation -->
+  <div class="price__cards" id="prCards">
+    <div class="price__card">
+      <img src="assets/svg/card-top.svg" alt="" aria-hidden="true">
+      <canvas class="price__cv" data-top="#2F2F2F" data-bot="#272727" aria-hidden="true"></canvas>
+      <img class="price__edge" src="assets/svg/card-top-edge.svg" alt="" aria-hidden="true">
+    </div>
+    <div class="price__card">
+      <img src="assets/svg/card-bot.svg" alt="" aria-hidden="true">
+      <canvas class="price__cv" data-top="#272727" data-bot="#181818" aria-hidden="true"></canvas>
+      <img class="price__edge" src="assets/svg/card-bot-edge.svg" alt="" aria-hidden="true">
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     FOOTER  (Figma 434:3617)
+     ================================================================== -->
+<section class="ftr" id="contact">
+  <canvas class="ftr__stars" aria-hidden="true"></canvas>
+  <!-- both HUD states, bent through a lens so they read as projected on curved
+       cockpit glass rather than drawn flat -->
+  <canvas class="ftr__lens" aria-hidden="true"></canvas>
+  <div class="ftr__stage">
+
+    <!-- 455:4418 — the title. Leaves upward when the HUD takes over. -->
+    <div class="ftr__title" aria-hidden="false">
+      <div class="ftr__tl ftr__tl--1">DON’T JUST SHIP<img src="assets/svg/dot-mark.svg" alt="." width="9" height="9"></div>
+      <div class="ftr__tl ftr__tl--2">SURGE<img src="assets/svg/dot-mark.svg" alt="." width="9" height="9"></div>
+    </div>
+
+    <!-- 455:4419 — same bracket button as the nav -->
+    <nav class="ftr__links">
+      <a class="btn-deck" href="https://x.com" target="_blank" rel="noopener">
+        <span class="btn-deck__layer">
+          <img class="btn-deck__brk btn-deck__brk--l" src="assets/svg/bracket-left.svg" alt="" width="3" height="25">
+          <span class="btn-deck__label">X.COM</span>
+          <img class="btn-deck__brk btn-deck__brk--r" src="assets/svg/bracket-right.svg" alt="" width="3" height="25">
+        </span>
+      </a>
+      <a class="btn-deck" href="https://linkedin.com" target="_blank" rel="noopener">
+        <span class="btn-deck__layer">
+          <img class="btn-deck__brk btn-deck__brk--l" src="assets/svg/bracket-left.svg" alt="" width="3" height="25">
+          <span class="btn-deck__label">LINKEDIN</span>
+          <img class="btn-deck__brk btn-deck__brk--r" src="assets/svg/bracket-right.svg" alt="" width="3" height="25">
+        </span>
+      </a>
+      <a class="btn-deck" href="#deck">
+        <span class="btn-deck__layer">
+          <img class="btn-deck__brk btn-deck__brk--l" src="assets/svg/bracket-left.svg" alt="" width="3" height="25">
+          <span class="btn-deck__label">DECK</span>
+          <img class="btn-deck__brk btn-deck__brk--r" src="assets/svg/bracket-right.svg" alt="" width="3" height="25">
+        </span>
+      </a>
+    </nav>
+
+    <!-- 455:4656 — hit area only, paints nothing. Entering it swaps the footer
+         into the HUD state; the CTA sits inside so the button never breaks it. -->
+    <div class="ftr__zone" id="ftrZone">
+    <!-- same component as the nav CONTACT button (identical union path), so the
+         glow stack, backdrop blur and lift all come for free; the face gradient
+         needs its own id because ids cannot repeat -->
+    <a class="btn-contact btn-contact--ftr" href="#book" id="ftrCta">
+      <img class="btn-contact__shape btn-contact__shape--g1" src="assets/svg/contact-union.svg" alt="" width="111" height="32" aria-hidden="true">
+      <img class="btn-contact__shape btn-contact__shape--g2" src="assets/svg/contact-union.svg" alt="" width="111" height="32" aria-hidden="true">
+      <span class="btn-contact__backdrop" aria-hidden="true"></span>
+      <svg class="btn-contact__shape" viewBox="0 0 111 32" fill="none" aria-hidden="true" focusable="false">
+        <path d="M109.946 5.07625C110.302 5.44833 110.5 5.94302 110.5 6.4575V26.5015C110.5 27.605 109.606 28.5 108.503 28.5015L46.6112 28.5892C46.0045 28.59 45.4309 28.8663 45.052 29.3402L44.6005 29.9049C44.221 30.3796 43.6462 30.6559 43.0384 30.6559H3.82843C3.29799 30.6559 2.78929 30.4452 2.41421 30.0702L1.10243 28.7584C1.03624 28.6922 0.946398 28.6551 0.852779 28.6553C0.658056 28.6556 0.5 28.4979 0.5 28.3032V2.65296C0.5 1.54956 1.39361 0.654609 2.49701 0.652958L104.718 0.500002C105.265 0.499183 105.789 0.72282 106.167 1.11876L109.946 5.07625Z"
+              fill="url(#gBookFace)" stroke="#FF4208" stroke-opacity="0.4" stroke-width="1"/>
+        <defs>
+          <linearGradient id="gBookFace" x1="0.5" y1="15.578" x2="110.5" y2="15.578" gradientUnits="userSpaceOnUse">
+            <stop class="cf-a"/>
+            <stop class="cf-b" offset="1"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="btn-contact__label">BOOK A CALL</span>
+    </a>
+    </div>
+
+  </div>
+
+  <!-- 455:4420-4422 — same reason as the panel below: bottom-anchored, so it
+       has to escape the stage's 1080*--u overflow -->
+  <div class="ftr__meta ftr__meta--l">CNVRTLABS© 2026 ALL RIGHTS RESERVED</div>
+  <div class="ftr__meta ftr__meta--c">MADE WITH 🍏 FROM BLR</div>
+  <div class="ftr__meta ftr__meta--r">QUARK LABS DIGITAL LLP 🌻</div>
+
+</section>
+
+<script type="module">
+/* ==================== FOOTER — starfield / hyperwarp ====================
+   Stars fly at the camera; hovering the CTA kicks the field into a hyperwarp
+   where each dot smears into a long-exposure streak.
+
+   One instanced draw call, and NOTHING is uploaded per frame. The trick is
+   that a star's depth is not stored — it is derived:
+
+     zc = uDepth - mod(aPos.z + uDist, uDepth)
+
+   so a single scalar uniform (uDist, the distance travelled) advances every
+   star and recycles it at the far plane for free. No CPU particle loop, no
+   buffer re-upload, no GC. The cost per frame is three uniform writes.
+
+   Dot and streak are the SAME primitive, which is what keeps the transition
+   seamless. Every star is one quad carrying a capsule SDF: the head is the
+   star projected at its current depth, the tail is the same star projected
+   `uStreak` further away, and the fragment shades the distance to that
+   segment. At rest uStreak is 0, head and tail coincide, and the capsule
+   collapses to a circle — a tiny white dot. Wind uStreak up and the identical
+   geometry stretches into a round-capped streak pointing back at the
+   vanishing point, which is exactly what a long exposure of the same motion
+   looks like. No mode switch, no crossfade, no second material.
+
+   Perspective is done by hand (px = xy * focal / z) rather than through a
+   camera matrix, because the shader needs BOTH projections — head and tail —
+   and the streak has to be built in pixel space to keep its width constant
+   while its length grows. */
+(async()=>{
+  const sec=document.getElementById("contact");
+  const cv=sec&&sec.querySelector(".ftr__stars");
+  const cta=document.getElementById("ftrCta");
+  if(!sec||!cv) return;
+  let THREE; try{ THREE=await import("https://esm.sh/three@0.185.1"); }
+  catch(e){ console.warn("[stars]",e); return; }
+  const REDUCE=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const DEPTH=60, NEAR=1.0, FOCAL=900, SPREAD=2.6;
+  /* CALM is a drift — ~13s to cross the field. WARP is ~17x that. SHUTTER is
+     the exposure a streak stands for: 45ms of travel drawn at once. Longer
+     than this and the streaks run the full width of the screen and the whole
+     footer turns into a white starburst with the CTA lost inside it. */
+  const CALM=4.5, WARP=75, SHUTTER=0.045;
+
+  let renderer; try{ renderer=new THREE.WebGLRenderer({canvas:cv,alpha:false,antialias:false}); }
+  catch(e){ console.warn("[stars]",e); return; }
+  renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+  renderer.setClearColor(0x141414,1);                 // the frame fill, 434:3617
+
+  /* density, not a fixed count — the same field on a laptop and on a 4K panel */
+  const area=Math.max(1,innerWidth*innerHeight);
+  const N=Math.max(700,Math.min(2600,Math.round(area/1450)));
+
+  const geo=new THREE.InstancedBufferGeometry();
+  geo.setAttribute("position",new THREE.Float32BufferAttribute(
+    [-0.5,-0.5,0,  0.5,-0.5,0,  0.5,0.5,0,  -0.5,0.5,0],3));
+  geo.setIndex([0,1,2, 0,2,3]);
+  const pos=new Float32Array(N*3), rnd=new Float32Array(N);
+  for(let i=0;i<N;i++){
+    // a box wider than 16:9 so the field still reaches the corners of an
+    // ultrawide; off-screen instances cost a clipped quad and nothing else
+    pos[i*3  ]=(Math.random()*2-1)*SPREAD*2.0;
+    pos[i*3+1]=(Math.random()*2-1)*SPREAD;
+    pos[i*3+2]=Math.random()*DEPTH;
+    rnd[i]=Math.random();
+  }
+  geo.setAttribute("aPos",new THREE.InstancedBufferAttribute(pos,3));
+  geo.setAttribute("aRnd",new THREE.InstancedBufferAttribute(rnd,1));
+  geo.instanceCount=N;
+
+  const U={ uDist:{value:0}, uStreak:{value:0}, uWarp:{value:0},
+            uDepth:{value:DEPTH}, uNear:{value:NEAR}, uFocal:{value:FOCAL},
+            uRadius:{value:0.038}, uRes:{value:new THREE.Vector2(1,1)},
+            /* The vanishing point is the CENTRE OF THE STAGE, not of the
+               canvas. The canvas is 100vh but the stage is 1080*--u, so on any
+               viewport that isn't exactly 16:9 those two centres differ by tens
+               of pixels — and the stars would converge next to the CTA and the
+               HUD rings instead of through them. */
+            uCentre:{value:new THREE.Vector2(0,0)} };
+
+  const mat=new THREE.RawShaderMaterial({
+    uniforms:U, transparent:true, blending:THREE.AdditiveBlending,
+    depthTest:false, depthWrite:false,
+    vertexShader:
+      "precision highp float;\n"+
+      "attribute vec3 position; attribute vec3 aPos; attribute float aRnd;\n"+
+      "uniform float uDist,uStreak,uWarp,uDepth,uNear,uFocal,uRadius;\n"+
+      "uniform vec2 uRes,uCentre;\n"+
+      "varying vec2 vLocal; varying float vHalf,vR,vA;\n"+
+      "void main(){\n"+
+      // depth cycles far -> near without any CPU bookkeeping
+      "  float zc=uDepth-mod(aPos.z+uDist,uDepth);\n"+
+      "  float zh=zc+uNear;\n"+
+      "  float zt=zh+uStreak;\n"+                    // where it was, an exposure ago
+      "  vec2 head=aPos.xy*(uFocal/zh);\n"+
+      "  vec2 tail=aPos.xy*(uFocal/zt);\n"+
+      "  float r=clamp(uRadius*(0.45+aRnd)*(uFocal/zh),0.32,1.9);\n"+
+      "  vec2 axis=head-tail; float len=length(axis);\n"+
+      "  vec2 dir=len>0.0001?axis/len:vec2(1.0,0.0);\n"+
+      // Screen-space cap. Streak length grows as 1/z^2, so the handful of stars
+      // nearest the camera would otherwise draw 2000px bars across everything.
+      "  len=min(len,420.0);\n"+
+      "  vec2 nrm=vec2(-dir.y,dir.x);\n"+
+      // quad grown by r (+1px of AA margin) so the round caps are never clipped
+      "  float ex=len*0.5+r+1.0, ey=r+1.0;\n"+
+      "  vec2 local=vec2(position.x*2.0*ex,position.y*2.0*ey);\n"+
+      "  vec2 p=head-dir*len*0.5+dir*local.x+nrm*local.y;\n"+
+      "  vLocal=local; vHalf=len*0.5; vR=r;\n"+
+      /* Depth fade, and the exposure trade. A stretched star spreads the same
+         light over a longer mark, so the streak has to DIM as it lengthens —
+         boosting brightness with speed (the obvious move) is what turns the
+         warp into a white-out. The falloff is gentler than true energy
+         conservation, which would make streaks nearly invisible. */
+      "  float t=1.0-zc/uDepth;\n"+
+      "  vA=pow(t,2.0)*(0.35+0.65*aRnd)*(1.0+uWarp*0.5)/(1.0+len*0.0035);\n"+
+      "  gl_Position=vec4((p+uCentre)/(uRes*0.5),0.0,1.0);\n"+
+      "}",
+    fragmentShader:
+      "precision highp float;\n"+
+      "varying vec2 vLocal; varying float vHalf,vR,vA;\n"+
+      "void main(){\n"+
+      // distance to the head->tail segment: a circle when vHalf is 0
+      "  float d=length(vec2(max(abs(vLocal.x)-vHalf,0.0),vLocal.y));\n"+
+      "  float a=1.0-smoothstep(vR-0.75,vR+0.35,d);\n"+
+      "  if(a<=0.002) discard;\n"+
+      "  gl_FragColor=vec4(vec3(1.0),a*vA);\n"+
+      "}"
+  });
+
+  const scene=new THREE.Scene(); scene.add(new THREE.Mesh(geo,mat));
+  const cam=new THREE.Camera();                       // unused: NDC is computed directly
+
+  const stage=sec.querySelector(".ftr__stage");
+  function size(){
+    const r=cv.getBoundingClientRect();
+    if(!r.width||!r.height) return false;
+    renderer.setSize(r.width,r.height,false);
+    U.uRes.value.set(r.width,r.height);
+    if(stage){                                   // park the vanishing point on the stage centre
+      const s=stage.getBoundingClientRect();
+      U.uCentre.value.set((s.left+s.width/2)-(r.left+r.width/2),
+                          // shader y is up, DOM y is down
+                          -((s.top+s.height/2)-(r.top+r.height/2)));
+    }
+    return true;
+  }
+  if(!size()) return;
+  addEventListener("resize",size);
+
+  let hot=false;
+  if(cta&&!REDUCE){
+    const on=()=>{hot=true;}, off=()=>{hot=false;};
+    cta.addEventListener("pointerenter",on);  cta.addEventListener("pointerleave",off);
+    cta.addEventListener("focus",on);         cta.addEventListener("blur",off);
+  }
+
+  if(REDUCE){ size(); renderer.render(scene,cam); return; }
+
+  let inview=false;
+  new IntersectionObserver(es=>{ inview=es[es.length-1].isIntersecting; },{rootMargin:"160px"}).observe(sec);
+
+  let warp=0, dist=0, prev=performance.now();
+  (function tick(now){
+    requestAnimationFrame(tick);
+    const dt=Math.min(.05,(now-prev)/1000); prev=now;
+    if(!inview||document.hidden) return;
+    /* Asymmetric approach — the jump to lightspeed snaps, the drop out of it
+       coasts. Framerate-independent (exp of dt), so it settles identically at
+       30fps and 144fps instead of easing faster on a better machine. */
+    warp+=((hot?1:0)-warp)*(1-Math.exp(-dt/(hot?0.30:0.62)));
+    const w=warp*warp*(3.0-2.0*warp);                 // smoothstep the ramp
+    const speed=CALM+(WARP-CALM)*Math.pow(w,1.7);     // >1 exponent = the kick
+    dist=(dist+speed*dt)%DEPTH;                       // mod keeps float precision
+    U.uDist.value=dist;
+    U.uStreak.value=speed*SHUTTER*Math.pow(w,1.6);    // dots hold until it means it
+    U.uWarp.value=w;
+    renderer.render(scene,cam);
+  })(performance.now());
+})();
+</script>
+
+<!-- the two HUD frames as data: URIs; see the file header for why they cannot
+     be plain .svg files on file:// -->
+<script src="assets/js/hud-frames.js"></script>
+<script>
+/* ============ FOOTER — HUD lens, two states (455:4267 / 455:4528) ============
+   Rest state carries the title, links and metadata over a small centre HUD.
+   Entering the hit zone evacuates all of that and forms the full cockpit HUD;
+   hovering the CTA inside it kicks the starfield to warp and over-drives the
+   glass. Both HUDs run through the same lens.
+
+   The lens is a barrel projection done by INVERSE mapping — for each output
+   pixel, which part of the flat frame lands here:
+
+     r' = r * edge / (1 + k1*r^2 + k2*r^4)
+
+   Dividing (not multiplying) makes the sheet concave, bending away into the
+   screen. `edge` anchors the frame's corner radius so raising the distortion
+   changes curvature without flinging the corners off screen.
+
+   Two DRAW PASSES rather than a two-texture shader. The states differ in size,
+   position and aspect, so blending them inside one shader would mean a second
+   set of every uniform and twelve texture fetches on a frame that mostly shows
+   one of them. Two passes cost one draw each, and the pass whose fade has
+   reached zero is skipped entirely — so at rest and at full HUD this is a
+   single draw, and only the ~400ms transition ever pays for both.
+
+   Raw WebGL, no three.js: the HUD is the footer's structure and has no business
+   vanishing because a CDN is slow. */
+(function(){
+  var sec=document.getElementById('contact'); if(!sec) return;
+  var cv=sec.querySelector('.ftr__lens'), stage=sec.querySelector('.ftr__stage');
+  var zone=document.getElementById('ftrZone'), cta=document.getElementById('ftrCta');
+  if(!cv||!stage) return;
+  var REDUCE=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var dirty=true;
+
+  /* Lens values, dialled in on the tuning panel that used to live here and then
+     frozen. Keys are the control names they were set with, so the mappings
+     further down still read against those numbers. */
+  var st={a:60, b:0, th:13, bl:65, ca:56, sp:36, gw:95, op:65};
+
+  /* ---- the two interaction signals ----
+     zoneHot drives the state swap, ctaHot drives the warp. The CTA sits INSIDE
+     the zone, so crossing onto the button never cancels the open state. */
+  var zoneHot=false, ctaHot=false;
+  function bind(el,set){
+    if(!el) return;
+    el.addEventListener('pointerenter',function(){ set(true); });
+    el.addEventListener('pointerleave',function(){ set(false); });
+    el.addEventListener('focus',function(){ set(true); },true);
+    el.addEventListener('blur',function(){ set(false); },true);
+  }
+  bind(zone,function(v){ zoneHot=v; dirty=true;
+    // classes flip immediately so the CSS evacuation runs on its own curve
+    // rather than being sampled off the shader's easing. The body one is what
+    // reaches the shared chrome (logo / nav / agent bar), which lives outside
+    // this section and so cannot be selected from it.
+    sec.classList.toggle('is-open',v);
+    document.body.classList.toggle('hud-open',v); });
+  bind(cta,function(v){ ctaHot=v; dirty=true; });
+
+  var gl=null;
+  try{ gl=cv.getContext('webgl2',{alpha:true,antialias:false,depth:false})
+        ||cv.getContext('webgl',{alpha:true,antialias:false,depth:false}); }catch(e){}
+  if(!gl) return;
+  var GL2=(typeof WebGL2RenderingContext!=='undefined')&&(gl instanceof WebGL2RenderingContext);
+
+  var VS='attribute vec2 aP;varying vec2 vUv;'+
+         'void main(){vUv=aP*0.5+0.5;gl_Position=vec4(aP,0.0,1.0);}';
+  var FS='precision highp float;varying vec2 vUv;uniform sampler2D uTex;'+
+    'uniform vec2 uRes,uCentre;uniform vec4 uFrame;'+
+    'uniform float uK1,uK2,uNorm,uEdge,uR2Max,uRC,uBlur,uCA,uSplit;'+
+    'uniform float uFall,uGlow,uGlowLod,uOpacity,uFade,uReveal,uRing,uScale;'+
+    /* one radial sample. Outside the flat frame there is nothing to bend into
+       view, so it contributes zero rather than clamping a smeared edge pixel. */
+    'vec4 tap(vec2 dir,float scl,float bias){'+
+    ' vec2 f=((uCentre+dir*scl*uNorm)-uFrame.xy)/uFrame.zw;'+
+    ' if(f.x<0.0||f.x>1.0||f.y<0.0||f.y>1.0) return vec4(0.0);'+
+    ' return texture2D(uTex,f,bias);}'+
+    'void main(){'+
+    /* y measured DOWN, so canvas space matches both the DOM rects the uniforms
+       come from and the texture rows as uploaded */
+    ' vec2 px=vec2(vUv.x*uRes.x,(1.0-vUv.y)*uRes.y);'+
+    ' vec2 c=(px-uCentre)/uNorm;'+
+    ' float r2r=dot(c,c), rnw=sqrt(r2r)/uRC;'+
+    /* The forming wipe. Sweeping uReveal outward draws the HUD on from the
+       vanishing point instead of cross-fading it, which is what makes it read
+       as an instrument booting rather than an image appearing. */
+    ' float rv=1.0-smoothstep(uReveal-0.12,uReveal,rnw);'+
+    ' if(rv<=0.002) discard;'+
+    /* Clamped for MONOTONICITY, not for looks. r/(1+k1r^2+k2r^4) rises, peaks,
+       then falls; past that peak the inverse mapping folds and the corners
+       mirror themselves. uR2Max is the peak, so beyond it the scale freezes and
+       r keeps growing linearly. */
+    ' float r2=min(r2r,uR2Max);'+
+    /* DIVIDING by the polynomial (rather than multiplying) is what makes the
+       sheet concave: interior pixels sample from further out, so the middle
+       recedes and the surface bends AWAY into the screen. */
+    ' float base=uScale*uEdge/(1.0+uK1*r2+uK2*r2*r2);'+
+    /* Everything below is edge-weighted, and Threshold is literally "how far in
+       does the edge start". It is an EXPONENT, not a ramp start: pow(rn,0) is 1
+       everywhere, so threshold 0 applies the effects flat across the whole
+       frame; raise it and the weight collapses toward the rim. */
+    ' float ew=pow(max(clamp(sqrt(r2r)/uRC,0.0,1.0),0.0001),uFall);'+
+    ' float bias=uBlur*ew, ca=uCA*ew, sp=uSplit*ew;'+
+    /* Two ghosts at half weight each: identical when Split is 0, so the control
+       opens a genuine dual image instead of fading a second copy in. */
+    ' vec3 cov=vec3(0.0);'+
+    ' for(int g=0;g<2;g++){'+
+    '  float gs=base*(g==0?1.0-sp:1.0+sp);'+
+    '  cov+=0.5*vec3(tap(c,gs*(1.0-ca),bias).a,'+
+    '                tap(c,gs,bias).a,'+
+    '                tap(c,gs*(1.0+ca),bias).a);}'+
+    /* Glow is one more tap at a deliberately coarse mip — the halo is the
+       texture's own blurred coverage added back, so it costs a single fetch
+       rather than a separate blur pass. */
+    ' float gw=tap(c,base,uGlowLod).a*uGlow;'+
+    ' vec3 tot=cov+vec3(gw);'+
+    ' float m=max(tot.r,max(tot.g,tot.b));'+
+    ' if(m<=0.003) discard;'+
+    /* the wipe front flares, so the HUD looks energised into place */
+    ' float ring=1.0+uRing*exp(-pow((rnw-uReveal)*13.0,2.0));'+
+    /* The source is white line art, so per-channel COVERAGE is the entire
+       signal — where the three radii disagree the fringe colours itself. */
+    ' gl_FragColor=vec4(tot/m,min(m*ring,1.0)*uOpacity*uFade*rv);}';
+
+  function sh(t,s){ var o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o);
+    if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)){ console.warn('[lens]',gl.getShaderInfoLog(o)); return null; }
+    return o; }
+  var vs=sh(gl.VERTEX_SHADER,VS), fs=sh(gl.FRAGMENT_SHADER,FS);
+  if(!vs||!fs) return;
+  var prog=gl.createProgram(); gl.attachShader(prog,vs); gl.attachShader(prog,fs); gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog,gl.LINK_STATUS)){ console.warn('[lens]',gl.getProgramInfoLog(prog)); return; }
+  gl.useProgram(prog);
+
+  // one full-viewport triangle; a quad would need an index buffer for nothing
+  var buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+  var aP=gl.getAttribLocation(prog,'aP');
+  gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP,2,gl.FLOAT,false,0,0);
+
+  var U={};
+  ['uRes','uCentre','uFrame','uK1','uK2','uNorm','uEdge','uR2Max','uRC','uBlur','uCA',
+   'uSplit','uFall','uGlow','uGlowLod','uOpacity','uFade','uReveal','uRing','uScale','uTex']
+    .forEach(function(n){ U[n]=gl.getUniformLocation(prog,n); });
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.clearColor(0,0,0,0);
+
+  /* Each plate is PADDED. Frame content runs right to the edge of its design
+     box, so without a transparent margin the blur and the glow halo would be
+     sliced flat against that boundary — a hard rectangle around soft light.
+     The pad is carried into uFrame so the mapping still lands on the same
+     pixels. Supersampled too: the rails are 1px and the lens squeezes them as
+     they travel outward, so they need spare resolution to survive it. */
+  function plate(uri, box){
+    var o={box:box, ready:false, tex:gl.createTexture()};
+    if(!uri){ console.warn('[lens] HUD asset missing'); return o; }
+    var RW=2560; o.PAD=Math.round(RW*0.06); o.DW=RW-2*o.PAD;
+    var DH=Math.round(o.DW*box[3]/box[2]), RH=DH+2*o.PAD;
+    var img=new Image();
+    img.onload=function(){
+      var c2=document.createElement('canvas'); c2.width=RW; c2.height=RH;
+      c2.getContext('2d').drawImage(img,o.PAD,o.PAD,o.DW,DH);
+      gl.bindTexture(gl.TEXTURE_2D,o.tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);   // row 0 = image top = v 0
+      /* Guarded because this is exactly where a cross-origin source blows up:
+         texImage2D throws SecurityError on a canvas a foreign image touched. */
+      try{ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c2); }
+      catch(e){ console.warn('[lens] texture blocked:',e.message); return; }
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      // NPOT mipmaps need WebGL2; without them the squeezed rails shimmer
+      if(GL2){ gl.generateMipmap(gl.TEXTURE_2D);
+               gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR); }
+      else gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+      o.ready=true; dirty=true;
+    };
+    img.src=uri;
+    return o;
+  }
+  // design-space boxes, straight off the Figma nodes
+  var REST=plate(window.CNVRT_HUD_REST,[46,68,1839,976]);
+  var FULL=plate(window.CNVRT_HUD_FULL,[35.5,63,1849,954]);
+
+  var inview=false;
+  if(window.IntersectionObserver)
+    new IntersectionObserver(function(es){ inview=es[es.length-1].isIntersecting; dirty=true; },
+      {rootMargin:'160px'}).observe(sec);
+  else inview=true;
+  addEventListener('resize',function(){ dirty=true; });
+
+  var dpr=Math.min(2,window.devicePixelRatio||1), W=0, H=0;
+  var open=0, warp=0, prev=performance.now();
+
+  /* Cursor tracking for the yaw. Raw pointer coordinates would make the HUD
+     twitch on every stray pixel, so the target is chased with a critically
+     damped follow — the panel leads the cursor and settles, the way a heavy
+     gimbal does, instead of being welded to it. */
+  var aimX=0, aimY=0, yawX=0, yawY=0;
+  sec.addEventListener('pointermove',function(e){
+    var r=sec.getBoundingClientRect(); if(!r.width) return;
+    aimX=Math.max(-1,Math.min(1,((e.clientX-r.left)/r.width -0.5)*2));
+    aimY=Math.max(-1,Math.min(1,((e.clientY-r.top )/r.height-0.5)*2));
+    dirty=true;
+  });
+
+  function draw(p, r, sg, u, cx, cy, fade, reveal, ring, scale, yx, yy){
+    if(!p.ready||fade<=0.004) return;
+    var b=p.box;
+    var fx=(sg.left-r.left+b[0]*u)*dpr, fy=(sg.top-r.top+b[1]*u)*dpr;
+    var fw=b[2]*u*dpr, fh=b[3]*u*dpr;
+    if(!fw||!fh) return;
+
+    /* Yaw. The bigger half of this is moving the OPTICAL AXIS toward the
+       cursor, not sliding the artwork: every edge effect is weighted by
+       distance from uCentre, so shifting it makes the side you are looking at
+       flatten and sharpen while the far side bows and smears. That is what a
+       curved panel turning to face you actually does — a plain translate reads
+       as a sticker on a spring. The small parallax on top sells the tilt.
+       Both scale in with the open state, so the rest HUD never drifts. */
+    cx+=yx*fw*0.0491; cy+=yy*fw*0.0491;
+    fx+=yx*fw*0.0112; fy+=yy*fw*0.0112;
+
+    var k1=(st.a/100)*0.34*(1+warp*0.55);
+    var k2=(st.b/100)*0.14*(1+warp*0.55);
+    /* Anchor the CORNERS, not the edge midpoints. Concave pushes content
+       outward, so anchoring the edges would fling the corners off screen. */
+    var rc2=1+(fh/fw)*(fh/fw);
+    var edge=1+k1*rc2+k2*rc2*rc2;
+    // where r/(1+k1r^2+k2r^4) turns over: 1 - k1*u - 3*k2*u^2 = 0
+    var r2max=(k2>1e-6)?(-k1+Math.sqrt(k1*k1+12*k2))/(6*k2):(k1>1e-6?1/k1:1e9);
+    var pd=p.PAD*(fw/p.DW);          // uFrame describes the PADDED plate
+
+    gl.uniform2f(U.uRes,cv.width,cv.height);
+    gl.uniform2f(U.uCentre,cx,cy);
+    gl.uniform4f(U.uFrame,fx-pd,fy-pd,fw+2*pd,fh+2*pd);
+    gl.uniform1f(U.uK1,k1);   gl.uniform1f(U.uK2,k2);
+    gl.uniform1f(U.uEdge,edge); gl.uniform1f(U.uR2Max,r2max);
+    gl.uniform1f(U.uRC,Math.sqrt(rc2));
+    gl.uniform1f(U.uNorm,fw*0.5);    // r=1 at the frame's left/right edge
+    /* Blur is a mip LOD bias, not a tap loop. CA and Split are radial scale
+       offsets — at the corner r is ~1.1*uNorm, so 0.008 is a few px of fringe. */
+    gl.uniform1f(U.uBlur,(st.bl/100)*2.4*(1+warp*0.35));
+    gl.uniform1f(U.uCA,(st.ca/100)*0.008*(1+warp*0.8));
+    gl.uniform1f(U.uSplit,(st.sp/100)*0.016*(1+warp*0.8));
+    // curved so the useful low half of the slider is not crammed into a few notches
+    gl.uniform1f(U.uFall,Math.pow(st.th/100,1.4)*18);
+    gl.uniform1f(U.uGlow,(st.gw/100)*1.35*(1+warp*0.45));
+    gl.uniform1f(U.uGlowLod,4.2);    // coarse enough to read as light, not a copy
+    gl.uniform1f(U.uOpacity,st.op/100);
+    gl.uniform1f(U.uFade,fade); gl.uniform1f(U.uReveal,reveal);
+    gl.uniform1f(U.uRing,ring); gl.uniform1f(U.uScale,scale);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,p.tex);
+    gl.uniform1i(U.uTex,0);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+  }
+
+  function tick(now){
+    requestAnimationFrame(tick);
+    var dt=Math.min(.05,(now-prev)/1000); prev=now;
+    if(!inview||document.hidden) return;
+    if(!REST.ready&&!FULL.ready) return;
+
+    if(!REDUCE){
+      /* Asymmetric on purpose: a HUD snaps to alert and relaxes out of it.
+         Framerate-independent, so it settles identically at 30 and 144fps. */
+      var no=open+((zoneHot?1:0)-open)*(1-Math.exp(-dt/(zoneHot?0.24:0.40)));
+      var nw=warp+((ctaHot?1:0)-warp)*(1-Math.exp(-dt/(ctaHot?0.30:0.62)));
+      var f=1-Math.exp(-dt/0.17);
+      var nx=yawX+(aimX-yawX)*f, ny=yawY+(aimY-yawY)*f;
+      if(Math.abs(no-open)>0.0004||Math.abs(nw-warp)>0.0004||
+         Math.abs(nx-yawX)>0.0006||Math.abs(ny-yawY)>0.0006) dirty=true;
+      open=no; warp=nw; yawX=nx; yawY=ny;
+    }else{ open=zoneHot?1:0; warp=0; yawX=yawY=0; }
+
+    var r=cv.getBoundingClientRect(); if(!r.width||!r.height) return;
+    if(Math.abs(r.width-W)>0.5||Math.abs(r.height-H)>0.5){
+      W=r.width; H=r.height;
+      cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+      gl.viewport(0,0,cv.width,cv.height);
+      dirty=true;
+    }
+    // a settled lens costs nothing — no redraw, no GPU work
+    if(!dirty) return;
+    dirty=false;
+
+    var sg=stage.getBoundingClientRect(); if(!sg.width) return;
+    var u=sg.width/1920;
+    // lens axis = stage centre: where the CTA, the HUD and the stars all meet
+    var cx=(sg.left-r.left+sg.width/2)*dpr, cy=(sg.top-r.top+sg.height/2)*dpr;
+    var o=open*open*(3.0-2.0*open);            // smoothstep the state blend
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    /* The outgoing HUD dissolves faster than the incoming one arrives and is
+       pushed slightly outward while it goes, so the two never read as a
+       cross-fade of the same object. */
+    // yaw only belongs to the open state, so it scales in with it
+    var yx=yawX*o, yy=yawY*o;
+    draw(REST, r, sg, u, cx, cy, Math.max(0,1-o*1.45), 9.0, 0.0, 1+0.07*o, yx, yy);
+    /* The full HUD sweeps on from the vanishing point with a flaring front,
+       settling inward as it lands. */
+    draw(FULL, r, sg, u, cx, cy, Math.min(1,o*1.25), o*2.05,
+         0.95*Math.sin(Math.PI*Math.min(1,Math.max(0,o))), 1+0.05*(1-o), yx, yy);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+
+<!-- =====================================================================
+     SHARED CHROME — one fixed layer for every section.
+     Must stay a direct child of <body>: position:fixed still PAINTS inside
+     its ancestor's stacking context, so leaving these in .hero (isolate +
+     overflow:hidden) would trap the logo's exclusion blend against the hero.
+     ================================================================== -->
+<div class="chrome">
+  <img class="logo" src="assets/svg/logo.svg" alt="CNVRTLABS" width="33" height="32">
+
+    <nav class="nav">
+  
+      <a class="btn-deck" href="#deck">
+        <span class="btn-deck__layer">
+          <img class="btn-deck__brk btn-deck__brk--l" src="assets/svg/bracket-left.svg"  alt="" width="3" height="25">
+          <span class="btn-deck__num">[1]</span>
+          <span class="btn-deck__label">DECK</span>
+          <img class="btn-deck__brk btn-deck__brk--r" src="assets/svg/bracket-right.svg" alt="" width="3" height="25">
+        </span>
+        <span class="btn-deck__layer btn-deck__layer--g1" aria-hidden="true">
+          <img class="btn-deck__brk btn-deck__brk--l" src="assets/svg/bracket-left.svg"  alt="" width="3" height="25">
+          <span class="btn-deck__num">[1]</span>
+          <span class="btn-deck__label">DECK</span>
+          <img class="btn-deck__brk btn-deck__brk--r" src="assets/svg/bracket-right.svg" alt="" width="3" height="25">
+        </span>
+        <span class="btn-deck__layer btn-deck__layer--g2" aria-hidden="true">
+          <img class="btn-deck__brk btn-deck__brk--l" src="assets/svg/bracket-left.svg"  alt="" width="3" height="25">
+          <span class="btn-deck__num">[1]</span>
+          <span class="btn-deck__label">DECK</span>
+          <img class="btn-deck__brk btn-deck__brk--r" src="assets/svg/bracket-right.svg" alt="" width="3" height="25">
+        </span>
+      </a>
+  
+      <a class="btn-contact" href="#contact">
+        <img class="btn-contact__shape btn-contact__shape--g1" src="assets/svg/contact-union.svg" alt="" width="111" height="32" aria-hidden="true">
+        <img class="btn-contact__shape btn-contact__shape--g2" src="assets/svg/contact-union.svg" alt="" width="111" height="32" aria-hidden="true">
+        <span class="btn-contact__backdrop" aria-hidden="true"></span>
+        <!-- inlined so the face gradient can animate on hover -->
+        <svg class="btn-contact__shape" viewBox="0 0 111 32" fill="none" aria-hidden="true" focusable="false">
+          <path d="M109.946 5.07625C110.302 5.44833 110.5 5.94302 110.5 6.4575V26.5015C110.5 27.605 109.606 28.5 108.503 28.5015L46.6112 28.5892C46.0045 28.59 45.4309 28.8663 45.052 29.3402L44.6005 29.9049C44.221 30.3796 43.6462 30.6559 43.0384 30.6559H3.82843C3.29799 30.6559 2.78929 30.4452 2.41421 30.0702L1.10243 28.7584C1.03624 28.6922 0.946398 28.6551 0.852779 28.6553C0.658056 28.6556 0.5 28.4979 0.5 28.3032V2.65296C0.5 1.54956 1.39361 0.654609 2.49701 0.652958L104.718 0.500002C105.265 0.499183 105.789 0.72282 106.167 1.11876L109.946 5.07625Z"
+                fill="url(#gContactFace)" stroke="#FF4208" stroke-opacity="0.4" stroke-width="1"/>
+          <defs>
+            <linearGradient id="gContactFace" x1="0.5" y1="15.578" x2="110.5" y2="15.578" gradientUnits="userSpaceOnUse">
+              <stop class="cf-a"/>
+              <stop class="cf-b" offset="1"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="btn-contact__num">[2]</span>
+        <span class="btn-contact__label">CONTACT</span>
+      </a>
+  
+    </nav>
+
+    <div class="agent">
+      <span class="agent__icon" aria-hidden="true">
+        <img class="agent__iconimg" src="assets/svg/agentbar-icon.svg" alt="" width="22" height="22">
+      </span>
+      <span class="agent__backdrop" aria-hidden="true"></span>
+      <img class="agent__shape" src="assets/svg/agentbar-union.svg" alt="" width="243" height="34" aria-hidden="true">
+      <img class="agent__shape agent__shape--g1" src="assets/svg/agentbar-union.svg" alt="" width="243" height="34" aria-hidden="true">
+      <img class="agent__shape agent__shape--g2" src="assets/svg/agentbar-union.svg" alt="" width="243" height="34" aria-hidden="true">
+      <span class="agent__label">ASK ABOUT ANYTHING.</span>
+    </div>
+</div>
+
+<script>
+/* Keep --u locked to the real content width. 100vw includes the scrollbar
+   gutter, so once this page grows past one viewport the CSS fallback would
+   drift by ~15px worth of scale. */
+(function () {
+  var root = document.documentElement;
+  function sync() {
+    root.style.setProperty('--u', (root.clientWidth / 1920) + 'px');
+  }
+  sync();
+  addEventListener('resize', sync, { passive: true });
+})();
+
+/* Offerings: map scroll position through the 400vh section onto four states
+   (none / product / website / gtm), matching the four Figma frames. Reads are
+   batched into a rAF so scrolling never triggers a sync layout. */
+(function () {
+  var section = document.querySelector('.off');
+  if (!section) return;
+  var items = [].slice.call(section.querySelectorAll('.off__item'));
+  var STATES = items.length + 1;          // +1 for the "nothing open" state
+  var current = -1;
+  var queued = false;
+
+  function apply(i) {
+    if (i === current) return;
+    current = i;
+    items.forEach(function (el, n) { el.classList.toggle('is-on', n === i); });
+  }
+
+  function measure() {
+    queued = false;
+    var r = section.getBoundingClientRect();
+    var travel = section.offsetHeight - innerHeight;
+    if (travel <= 0) return;
+    var p = Math.min(Math.max(-r.top / travel, 0), 1);
+    // slot 0 = nothing open, slots 1..n = item n-1
+    apply(Math.min(Math.floor(p * STATES), STATES - 1) - 1);
+  }
+
+  function onScroll() {
+    if (!queued) { queued = true; requestAnimationFrame(measure); }
+  }
+
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll, { passive: true });
+  measure();
+
+  /* Direct interaction: clicking or focusing a row opens it immediately and
+     scrolls the page to the matching slot, so the pointer and the scrollbar
+     never disagree about which one is open. */
+  items.forEach(function (el, n) {
+    el.tabIndex = 0;
+    function go() {
+      var travel = section.offsetHeight - innerHeight;
+      var target = section.offsetTop + travel * ((n + 1 + 0.5) / STATES);
+      scrollTo({ top: target, behavior: 'smooth' });
+    }
+    el.addEventListener('click', go);
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+    });
+    el.addEventListener('mouseenter', function () { apply(n); });
+  });
+})();
+
+/* CONTACT button: cursor magnetism + code-scramble label.
+   The lift itself is pure CSS (Figma's -6y on the 800ms curve); this only
+   feeds --mx/--my, which ride the `translate` property so they can settle in
+   250ms without dragging the 800ms lift along with them. */
+(function () {
+  var btn = document.querySelector('.btn-contact');
+  if (!btn) return;
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------------- magnetism ---------------- */
+  var RADIUS = 150;   // design px around the button where the pull begins
+  var PULL   = 0.34;  // fraction of the cursor offset actually applied
+  var CAP    = 13;    // design px ceiling, so it never detaches from the nav
+  var pending = null, raf = 0;
+
+  function unit() { return document.documentElement.clientWidth / 1920; }
+
+  function commit() {
+    raf = 0;
+    var e = pending; pending = null;
+    var U = unit();
+    var r = btn.getBoundingClientRect();
+
+    // Magnetism yields the moment the cursor is over the button: it releases to
+    // centre and the only thing still moving is the -6 lift, so the elevated
+    // position reads as a settled stop rather than something that keeps drifting.
+    //
+    // Tested against THIS rect on purpose. The pull and lift are applied to the
+    // children, never to .btn-contact itself, so this box is the resting layout
+    // position and never moves. Testing the painted position instead (or :hover,
+    // which follows it) would oscillate: the pull drags the button under the
+    // cursor, that releases it, it springs back out, and it pulls again.
+    if (e.clientX >= r.left && e.clientX <= r.right &&
+        e.clientY >= r.top && e.clientY <= r.bottom) {
+      btn.classList.remove('is-pulled');
+      btn.style.setProperty('--mx', '0px');
+      btn.style.setProperty('--my', '0px');
+      return;
+    }
+    var dx = e.clientX - (r.left + r.width / 2);
+    var dy = e.clientY - (r.top + r.height / 2);
+    var R = RADIUS * U;
+    var d = Math.hypot(dx, dy);
+    if (d > R) {
+      btn.classList.remove('is-pulled');
+      btn.style.setProperty('--mx', '0px');
+      btn.style.setProperty('--my', '0px');
+      return;
+    }
+    // quadratic falloff: full strength near the button, nothing at the rim,
+    // so the pull fades in instead of snapping on at the radius boundary
+    var k = PULL * (1 - (d / R) * (d / R));
+    var cap = CAP * U;
+    btn.classList.add('is-pulled');
+    btn.style.setProperty('--mx', Math.max(-cap, Math.min(cap, dx * k)).toFixed(2) + 'px');
+    btn.style.setProperty('--my', Math.max(-cap, Math.min(cap, dy * k)).toFixed(2) + 'px');
+  }
+
+  if (!reduced) {
+    addEventListener('pointermove', function (e) {
+      pending = e;
+      if (!raf) raf = requestAnimationFrame(commit);
+    }, { passive: true });
+  }
+
+  /* ---------------- scramble ---------------- */
+  var label = btn.querySelector('.btn-contact__label');
+  var TEXT = label.textContent;
+  var CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  var sraf = 0, pools = null;
+
+  /* MD Thermochrome is NOT monospaced — A-Z0-9 span six different advances
+     (0.352 to 0.703 em). Swapping in random glyphs would change the label's
+     width every frame and make the button visibly jitter. So each slot only
+     ever draws from the glyphs whose advance matches the character that
+     belongs there, which pins the width exactly while still looking random.
+     Measured in the browser rather than hardcoded, so it survives a font swap. */
+  function buildPools() {
+    var cs = getComputedStyle(label);
+    var probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;top:-9999px;left:-9999px';
+    probe.style.fontFamily = cs.fontFamily;
+    probe.style.fontSize = cs.fontSize;
+    probe.style.fontWeight = cs.fontWeight;
+    probe.style.letterSpacing = cs.letterSpacing;
+    document.body.appendChild(probe);
+    function w(ch) { probe.textContent = ch; return Math.round(probe.getBoundingClientRect().width * 100); }
+    var byChar = {};
+    CHARS.split('').forEach(function (c) { byChar[c] = w(c); });
+    var out = TEXT.split('').map(function (ch) {
+      if (ch === ' ') return [' '];
+      var tw = w(ch);
+      var p = CHARS.split('').filter(function (c) { return byChar[c] === tw; });
+      return p.length ? p : [ch];
+    });
+    probe.remove();
+    return out;
+  }
+
+  function scramble(dur) {
+    if (!pools) pools = buildPools();
+    cancelAnimationFrame(sraf);
+    var n = TEXT.length;
+    var t0 = performance.now();
+    // stagger the settle point left-to-right so it resolves like a readout
+    var settle = [];
+    for (var i = 0; i < n; i++) settle.push(dur * 0.30 + (i / n) * dur * 0.70);
+    (function tick(now) {
+      var t = now - t0, out = '', done = true;
+      for (var i = 0; i < n; i++) {
+        if (t >= settle[i]) { out += TEXT[i]; }
+        else { var p = pools[i]; out += p[(Math.random() * p.length) | 0]; done = false; }
+      }
+      label.textContent = out;
+      if (!done) sraf = requestAnimationFrame(tick);
+    })(t0);
+  }
+
+  if (!reduced) {
+    btn.addEventListener('mouseenter', function () { scramble(520); });
+    btn.addEventListener('focus', function () { scramble(520); });
+  }
+})();
+
+/* Work showcase: one sticky viewport per project. Number, both text columns
+   and the screen all re-key together; the screen boots back in as broken rows. */
+(function () {
+  var sec = document.querySelector('.work');
+  if (!sec) return;
+
+  var ITEMS = [
+    { n: '001', url: 'https://abacor.com',      tags: ['<PRODUCT>', '<LAUNCH VIDEO>', '<WEBSITE>', '<GTM>'],
+      head: 'PRODUCT LAUNCH FOR THE LEADING AI NATIVE SOFTWARE FOR ACCOUNTANTS.',
+      desc: 'NO COMPROMISE MARKETING WEBSITES THAT CONVEY YOUR VISION OF THE BRAND TO YOUR AUDIENCE>' },
+    { n: '002', url: 'https://superreach.io',   tags: ['<PRODUCT>', '<WEBSITE>', '<BRANDING>', '<GTM>'],
+      head: 'OUTBOUND ENGINE REBUILT AROUND AGENTS INSTEAD OF SEQUENCES.',
+      desc: 'A PRODUCT SURFACE THAT MAKES AUTOMATED OUTREACH FEEL DELIBERATE RATHER THAN MASS SENT>' },
+    { n: '003', url: 'https://sigmacity.xyz',   tags: ['<BRANDING>', '<WEBSITE>', '<LAUNCH VIDEO>', '<GTM>'],
+      head: 'A CITY SIM STUDIO THAT NEEDED TO READ AS A PLATFORM.',
+      desc: 'IDENTITY, SITE AND LAUNCH FILM BUILT IN ONE PASS SO NOTHING DRIFTED BETWEEN SURFACES>' },
+    { n: '004', url: 'https://tokenrain.app',   tags: ['<PRODUCT>', '<WEBSITE>', '<GTM>', '<BRANDING>'],
+      head: 'REAL TIME TOKEN ANALYTICS WITHOUT THE DASHBOARD SPRAWL.',
+      desc: 'DENSE DATA HELD IN A LAYOUT THAT STAYS LEGIBLE AT A GLANCE AND REWARDS A SECOND LOOK>' },
+    { n: '005', url: 'https://higgsfield.ai',   tags: ['<LAUNCH VIDEO>', '<PRODUCT>', '<WEBSITE>', '<GTM>'],
+      head: 'GENERATIVE VIDEO TOOLING AIMED AT PEOPLE WHO ACTUALLY SHIP.',
+      desc: 'POSITIONING AND CRAFT TUNED SO THE TOOL READS AS A STUDIO INSTRUMENT NOT A TOY>' }
+  ];
+
+  var slides = [].slice.call(sec.querySelectorAll('.work__slide'));
+  var screen = document.getElementById('wkScreen');
+  var rowsEl = document.getElementById('wkRows');
+  var num = document.getElementById('wkNum'), head = document.getElementById('wkHead');
+  var desc = document.getElementById('wkDesc'), url = document.getElementById('wkUrl');
+  // the spans, NOT #wkTags.children — those are now the two flex rows, and
+  // scrambling into a row would replace its spans with raw text
+  var tags = [].slice.call(document.querySelectorAll('#wkTags span'));
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  sec.style.height = (ITEMS.length * 100) + 'vh';
+
+  /* The Figma curve for this effect, cubic-bezier(0, 1.03, 0, .99) at 1400ms.
+     Solved by bisection rather than Newton: with x1 = x2 = 0 the slope at t=0
+     is zero, so Newton divides by ~0 on the first step and never converges. */
+  function bezier(x1, y1, x2, y2) {
+    function at(t, a, b) { var u = 1 - t; return 3 * u * u * t * a + 3 * u * t * t * b + t * t * t; }
+    return function (x) {
+      var lo = 0, hi = 1, t = x;
+      for (var i = 0; i < 24; i++) { t = (lo + hi) / 2; if (at(t, x1, x2) < x) lo = t; else hi = t; }
+      return at(t, y1, y2);
+    };
+  }
+  var EASE = bezier(0, 1.03, 0, 0.99);
+  var DUR = 4000;
+
+  /* ---- advance-matched scramble (same reasoning as the CONTACT label: MD
+     Thermochrome is proportional, so a random glyph would reflow the block) ---- */
+  var CH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  function scramble(el, text, dur) {
+    if (reduced) { el.textContent = text; return; }
+    var cs = getComputedStyle(el);
+    var probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;top:-9999px;left:-9999px';
+    probe.style.fontFamily = cs.fontFamily; probe.style.fontSize = cs.fontSize;
+    probe.style.fontWeight = cs.fontWeight; probe.style.letterSpacing = cs.letterSpacing;
+    document.body.appendChild(probe);
+    function w(c) { probe.textContent = c; return Math.round(probe.getBoundingClientRect().width * 100); }
+    var byChar = {}; CH.split('').forEach(function (c) { byChar[c] = w(c); });
+    var pool = text.split('').map(function (ch) {
+      if (!/[A-Z0-9]/.test(ch)) return null;            // punctuation/space never swaps
+      var tw = w(ch), p = CH.split('').filter(function (c) { return byChar[c] === tw; });
+      return p.length ? p : null;
+    });
+    probe.remove();
+    cancelAnimationFrame(el._sr);
+    // No clearing pass — the randomiser runs straight over the outgoing text and
+    // the resolve front sweeps left to right, on the Figma curve.
+    var t0 = performance.now(), n = text.length;
+    (function tick(now) {
+      var p = Math.min(1, (now - t0) / dur);
+      var front = EASE(p) * n;                 // eased reveal front, not linear
+      var out = '', done = true;
+      for (var i = 0; i < n; i++) {
+        if (i < front || !pool[i]) out += text[i];
+        else { out += pool[i][(Math.random() * pool[i].length) | 0]; done = false; }
+      }
+      el.textContent = out;
+      if (p < 1) el._sr = requestAnimationFrame(tick);
+      else el.textContent = text;
+    })(t0);
+  }
+
+  /* ---- broken-row screen boot ----
+     Shutters clear in a strided order rather than top-to-bottom, so the picture
+     assembles in scattered bands the way a panel wakes up. 7 is coprime with 26,
+     so the stride visits every row exactly once before repeating. */
+  var NROWS = 26, rowEls = [];
+  for (var r = 0; r < NROWS; r++) {
+    var u = document.createElement('u');
+    u.style.top = (r / NROWS * 100) + '%';
+    u.style.height = (100 / NROWS + 0.15) + '%';
+    rowsEl.appendChild(u); rowEls.push(u);
+  }
+  function boot() {
+    screen.classList.remove('is-filling');
+    for (var i = 0; i < NROWS; i++) {
+      var order = (i * 7) % NROWS;                       // coprime stride -> broken order
+      rowEls[i].style.setProperty('--d', (order * 26 + Math.random() * 40).toFixed(0) + 'ms');
+    }
+    void screen.offsetWidth;                             // restart the transitions
+    screen.classList.add('is-filling');
+  }
+
+  var current = -1;
+  function show(i) {
+    if (i === current || i < 0 || i >= ITEMS.length) return;
+    current = i;
+    var d = ITEMS[i];
+    slides.forEach(function (s, n) { s.classList.toggle('is-on', n === i); });
+    // Drive the glow plates off the screen's own colour so the spill on the
+    // bezel tracks the work. Slides are flat right now, so the slide's computed
+    // background IS its average; swap this for a canvas sample when the real
+    // artwork lands and nothing else has to change.
+    var c = getComputedStyle(slides[i]).backgroundColor;
+    document.getElementById('wkGlowA').style.background = c;
+    document.getElementById('wkGlowB').style.background = c;
+    // same colour drives the piece-glow vectors (the mask carries the falloff,
+    // so this wants the flat colour, not a pre-faded one)
+    sec.style.setProperty('--piece', c);
+    boot();
+    scramble(num, d.n, DUR);
+    scramble(head, d.head, DUR);
+    scramble(desc, d.desc, DUR);
+    scramble(url, d.url, DUR);
+    tags.forEach(function (t, n) { scramble(t, d.tags[n], DUR); });
+    document.getElementById('wkPrev').disabled = i === 0;
+    document.getElementById('wkNext').disabled = i === ITEMS.length - 1;
+  }
+
+  var queued = false;
+  function measure() {
+    queued = false;
+    var travel = sec.offsetHeight - innerHeight;
+    if (travel <= 0) return;
+    var p = Math.min(Math.max(-sec.getBoundingClientRect().top / travel, 0), 1);
+    // the rule doubles as the scroll indicator: the tick rides it end to end
+    sec.style.setProperty('--sp', p.toFixed(4));
+    show(Math.min(Math.floor(p * ITEMS.length), ITEMS.length - 1));
+  }
+  addEventListener('scroll', function () {
+    if (!queued) { queued = true; requestAnimationFrame(measure); }
+  }, { passive: true });
+  addEventListener('resize', function () {
+    if (!queued) { queued = true; requestAnimationFrame(measure); }
+  }, { passive: true });
+  measure();
+
+  function goto(i) {
+    var travel = sec.offsetHeight - innerHeight;
+    scrollTo({ top: sec.offsetTop + travel * ((i + 0.5) / ITEMS.length), behavior: 'smooth' });
+  }
+  document.getElementById('wkPrev').addEventListener('click', function () { goto(current - 1); });
+  document.getElementById('wkNext').addEventListener('click', function () { goto(current + 1); });
+})();
+</script>
+
+</body>
+</html>
