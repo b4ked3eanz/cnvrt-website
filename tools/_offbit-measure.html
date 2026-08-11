@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>offbit dot grid — measurement rig</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<style>body{background:#141414;margin:0}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1300" height="1000"></canvas>
+<script>
+/* Draws OffBit Dot Bold at a known size so tools/ev-offbit.js can read the dot
+   pitch and diameter straight out of the pixels. Not part of the site. */
+window.__draw = function (px, glyphs) {
+  var c = document.getElementById('c'), x = c.getContext('2d');
+  x.fillStyle = '#141414'; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = '#FFF1E9';
+  x.textBaseline = 'top';
+  x.font = '700 ' + px + 'px "OffBit Trial"';
+  x.fillText(glyphs || 'A', 20, 20);
+  return x.font;
+};
+</script>
+</body></html>

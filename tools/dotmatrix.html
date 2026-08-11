@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cnvrt — dot matrix</title>
+<link rel="stylesheet" href="../assets/fonts/fonts.css">
+<!-- =========================================================================
+     DOT MATRIX — turn an image into an OffBit Dot grid
+     =========================================================================
+     For dropping a decorative letter PNG in and getting back something that
+     sits next to OffBit Dot type as a drop cap without looking like a guest.
+
+     THE GRID, MEASURED OFF THE FONT (not guessed, not eyeballed off a
+     screenshot — rendered at 700/1400/2000px and measured in pixels):
+
+       pitch          0.054 x font-size      18.5 dots per em
+       dot side       EXACTLY the pitch      they tile edge to edge, which is
+                                             why strokes merge into one mass
+                                             instead of reading as beads
+       corner radius  0.466 x side           a rounded square, NOT a circle
+       advance        11 dots                cap height 13 dots
+       colours        #FFF1E9 on #141414
+
+     The shape matters more than it sounds. A circle of diameter = pitch touches
+     its neighbour at a single point, so a stroke scallops and falls apart. The
+     real dot is a rounded square with about 7% of each side flat, so neighbours
+     meet along an edge and leave a small four-pointed notch at each crossing.
+     That notch is the whole texture of the typeface. Fitting the real glyph's
+     edge profile: rounded square RMS 0.008, circle RMS 0.018.
+
+     Set MATCH FONT-SIZE to whatever the OffBit text beside it is set at and the
+     grids line up exactly.
+     ====================================================================== -->
+<style>
+:root{
+  --bg:#0B0A09; --plate:#141414; --line:rgba(250,229,216,.12);
+  --ink:#FAE5D8; --dim:rgba(250,229,216,.46); --dimmer:rgba(250,229,216,.26);
+  --hot:#FF4208;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--dim);font:12px/1.45 var(--mono);
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;
+  display:flex;flex-direction:column;overflow:hidden}
+
+header{display:flex;align-items:center;gap:14px;padding:10px 14px;
+  border-bottom:1px solid var(--line);flex:0 0 auto}
+h1{font:400 13px/1 var(--mono);color:var(--ink)}
+h1 span{color:var(--hot)}
+#grid{color:var(--dimmer);font-size:11px;flex:1}
+button{font:11px/1 var(--mono);color:var(--ink);background:#1B1817;
+  border:1px solid var(--line);border-radius:4px;padding:7px 10px;cursor:pointer}
+button:hover{border-color:rgba(250,229,216,.32);background:#241F1D}
+button.hot{color:var(--hot);border-color:rgba(255,66,8,.42)}
+
+main{flex:1;display:flex;min-height:0}
+#panel{width:296px;flex:0 0 auto;border-right:1px solid var(--line);overflow:auto;
+  padding:12px 13px 40px}
+#stage{flex:1;min-width:0;overflow:auto;background:
+  linear-gradient(45deg,#0e0d0c 25%,transparent 25%,transparent 75%,#0e0d0c 75%),
+  linear-gradient(45deg,#0e0d0c 25%,transparent 25%,transparent 75%,#0e0d0c 75%);
+  background-size:22px 22px;background-position:0 0,11px 11px;
+  display:flex;align-items:center;justify-content:center;padding:26px}
+#wrap{display:flex;align-items:flex-end;gap:0;background:#141414;padding:0}
+canvas{display:block;image-rendering:pixelated;transform-origin:bottom left}
+
+#drop{border:1px dashed rgba(250,229,216,.24);border-radius:6px;padding:20px 12px;
+  text-align:center;color:var(--dimmer);cursor:pointer;margin-bottom:14px;
+  transition:border-color .12s,color .12s}
+#drop:hover,#drop.over{border-color:var(--hot);color:var(--ink)}
+#drop b{display:block;color:var(--ink);font-weight:400;margin-bottom:3px}
+
+.row{margin:0 0 11px}
+label{display:flex;justify-content:space-between;align-items:baseline;
+  color:var(--dimmer);font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+  margin-bottom:4px}
+label i{font-style:normal;color:var(--ink);font-size:11.5px;letter-spacing:0;
+  text-transform:none}
+input[type=range]{width:100%;accent-color:var(--hot);height:16px}
+input[type=text],input[type=number]{width:100%;background:#1B1817;color:var(--ink);
+  border:1px solid var(--line);border-radius:4px;padding:5px 7px;font:11px var(--mono)}
+.seg{display:flex;gap:0;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{border:0;border-radius:0;flex:1;padding:6px 4px;background:#141210;
+  color:var(--dim);font-size:10.5px}
+.seg button.on{background:#2A211E;color:var(--ink)}
+.two{display:flex;gap:8px}
+.two>*{flex:1}
+.sw{display:flex;gap:6px;align-items:center}
+.sw input[type=color]{width:30px;height:26px;padding:0;border:1px solid var(--line);
+  border-radius:4px;background:#1B1817}
+h3{font:400 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--dimmer);margin:18px 0 9px;padding-top:13px;border-top:1px solid var(--line)}
+.note{color:var(--dimmer);font-size:10.5px;line-height:1.5;margin-top:7px}
+.chk{display:flex;align-items:center;gap:7px;color:var(--dim);margin:0 0 8px;cursor:pointer}
+.chk input{accent-color:var(--hot)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>cnvrt <span>/</span> dot matrix</h1>
+  <div id="grid">drop an image</div>
+  <span style="color:var(--dimmer)">zoom</span>
+  <div class="seg" id="zoom" style="width:170px">
+    <button data-z="1">1x</button><button data-z="2" class="on">2x</button>
+    <button data-z="4">4x</button><button data-z="8">8x</button>
+  </div>
+  <button id="bPng">export png</button>
+  <button id="bPng4" class="hot">export @4x</button>
+</header>
+
+<main>
+<div id="panel">
+  <div id="drop"><b>drop an image</b>or click · or paste</div>
+  <input id="file" type="file" accept="image/*" hidden>
+
+  <div class="row">
+    <label>match font-size <i><span id="vFs">80</span>px</i></label>
+    <input id="fs" type="range" min="16" max="400" step="1" value="80">
+    <div class="note">Set this to whatever the OffBit text beside it is set at.
+      Pitch = 0.054 &times; font-size, so the grids land on the same lattice.</div>
+  </div>
+
+  <div class="row">
+    <label>dots across <i><span id="vCols">16</span></i></label>
+    <input id="cols" type="range" min="4" max="96" step="1" value="16">
+    <div class="note">Cap height in OffBit is <b>13</b> dots. A drop cap that
+      matches the caps beside it wants 13; taller reads as a drop cap.</div>
+  </div>
+
+  <h3>the dot</h3>
+  <div class="row">
+    <label>roundness <i><span id="vRad">0.466</span> &times; side</i></label>
+    <input id="rad" type="range" min="0" max="0.5" step="0.002" value="0.466">
+    <div class="note">0.466 is measured off the font. 0.5 is a circle and
+      scallops; 0 is a hard square.</div>
+  </div>
+  <div class="row">
+    <label>dot size <i><span id="vFill">1.00</span> &times; pitch</i></label>
+    <input id="fill" type="range" min="0.3" max="1.15" step="0.01" value="1">
+    <div class="note">1.00 tiles edge to edge, like the font. Below that the
+      dots separate and it reads as a halftone.</div>
+  </div>
+
+  <h3>the image</h3>
+  <div class="row">
+    <label>mode</label>
+    <div class="seg" id="mode">
+      <button data-m="on" class="on">on / off</button>
+      <button data-m="size">size</button>
+      <button data-m="both">both</button>
+    </div>
+  </div>
+  <div class="row">
+    <label>threshold <i><span id="vThr">0.50</span></i></label>
+    <input id="thr" type="range" min="0" max="1" step="0.01" value="0.5">
+  </div>
+  <div class="row">
+    <label>contrast <i><span id="vGam">1.00</span></i></label>
+    <input id="gam" type="range" min="0.2" max="4" step="0.05" value="1">
+  </div>
+  <label class="chk"><input id="inv" type="checkbox"> invert</label>
+  <label class="chk"><input id="alpha" type="checkbox" checked> use alpha as the matte</label>
+  <label class="chk"><input id="trim" type="checkbox" checked> trim to the artwork</label>
+
+  <h3>colour</h3>
+  <div class="two">
+    <div class="sw"><input id="cInk" type="color" value="#FFF1E9"><span>ink</span></div>
+    <div class="sw"><input id="cBg" type="color" value="#141414"><span>bg</span></div>
+  </div>
+  <label class="chk" style="margin-top:8px"><input id="tBg" type="checkbox"> transparent background on export</label>
+
+  <h3>reference</h3>
+  <label class="chk"><input id="ref" type="checkbox" checked> show a real OffBit letter beside it</label>
+  <div class="row"><input id="refTxt" type="text" value="A" maxlength="6"></div>
+  <div class="note">This is the actual font at the same font-size. If your dots
+    do not sit on the same rows as its dots, the pitch is wrong.</div>
+</div>
+
+<div id="stage">
+  <div id="wrap">
+    <canvas id="out" width="10" height="10"></canvas>
+    <canvas id="refc" width="10" height="10"></canvas>
+  </div>
+</div>
+</main>
+
+<script>
+/* ======================================================================
+   THE GRID CONSTANTS — measured, see the comment at the top of the file
+   ====================================================================== */
+var PITCH_EM = 0.054;    // grid pitch as a fraction of font-size
+var CAP_DOTS = 13;       // OffBit cap height, in dots
+
+var img = null, iw = 0, ih = 0, src = null;   // source, and its pixel data
+var out = document.getElementById('out'), ox = out.getContext('2d');
+var refc = document.getElementById('refc'), rx = refc.getContext('2d');
+
+var el = function (id) { return document.getElementById(id); };
+var Z = 2;                                     // preview zoom, CSS only
+var P = {
+  fs: 80, cols: 16, rad: 0.466, fill: 1, thr: 0.5, gam: 1,
+  mode: 'on', inv: false, alpha: true, trim: true,
+  ink: '#FFF1E9', bg: '#141414', tBg: false, ref: true, refTxt: 'A'
+};
+
+/* ---- the dot itself ----
+   A rounded square, because that is what the font draws. roundRect is in every
+   browser that matters now; the manual arcTo path is the fallback and is the
+   same shape, so nothing changes if it is taken. */
+function dot(c, x, y, s, r) {
+  r = Math.min(r * s, s / 2);
+  if (c.roundRect) { c.beginPath(); c.roundRect(x, y, s, s, r); c.fill(); return; }
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + s, y, x + s, y + s, r);
+  c.arcTo(x + s, y + s, x, y + s, r);
+  c.arcTo(x, y + s, x, y, r);
+  c.arcTo(x, y, x + s, y, r);
+  c.closePath(); c.fill();
+}
+
+/* ---- sample the source into a cols x rows grid of 0..1 coverage ----
+   Averaged over the whole cell rather than point-sampled: a letterform has
+   1px hairlines and a stem that lands between two sample points simply
+   vanishes. The average is what makes thin serifs survive as a dimmer dot. */
+function sample(cols) {
+  if (!src) return null;
+  var box = P.trim ? trimBox() : { x: 0, y: 0, w: iw, h: ih };
+  var rows = Math.max(1, Math.round(cols * (box.h / box.w)));
+  var g = new Float32Array(cols * rows);
+  var cw = box.w / cols, ch = box.h / rows;
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      var x0 = Math.floor(box.x + c * cw), x1 = Math.max(x0 + 1, Math.ceil(box.x + (c + 1) * cw));
+      var y0 = Math.floor(box.y + r * ch), y1 = Math.max(y0 + 1, Math.ceil(box.y + (r + 1) * ch));
+      var s = 0, n = 0;
+      for (var y = y0; y < y1 && y < ih; y++) {
+        for (var x = x0; x < x1 && x < iw; x++) {
+          var i = (y * iw + x) * 4;
+          var a = P.alpha ? src[i + 3] / 255 : 1;
+          var lum = (0.2126 * src[i] + 0.7152 * src[i + 1] + 0.0722 * src[i + 2]) / 255;
+          /* alpha as a matte: transparent counts as background, and the colour
+             under a transparent pixel is meaningless, so it must not be averaged in */
+          s += P.alpha ? a * lum + (1 - a) * (P.inv ? 1 : 0) : lum;
+          n++;
+        }
+      }
+      g[r * cols + c] = n ? s / n : 0;
+    }
+  }
+  return { g: g, cols: cols, rows: rows };
+}
+
+/* the artwork's own bounds, so a letter centred in a big transparent canvas
+   does not come back as four dots in the middle of an empty grid */
+function trimBox() {
+  var x0 = iw, y0 = ih, x1 = -1, y1 = -1;
+  for (var y = 0; y < ih; y++) for (var x = 0; x < iw; x++) {
+    var i = (y * iw + x) * 4;
+    var a = src[i + 3] / 255;
+    var lum = (0.2126 * src[i] + 0.7152 * src[i + 1] + 0.0722 * src[i + 2]) / 255;
+    var v = P.alpha ? a * lum : lum;
+    if (P.inv) v = (P.alpha ? a : 1) - v;
+    if (v > 0.06) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  if (x1 < 0) return { x: 0, y: 0, w: iw, h: ih };
+  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+function draw() {
+  var pitch = P.fs * PITCH_EM;
+  var s = sample(P.cols);
+  var W = Math.max(1, Math.round(P.cols * pitch));
+  var H = Math.max(1, Math.round((s ? s.rows : 1) * pitch));
+
+  out.width = W; out.height = H;
+  ox.clearRect(0, 0, W, H);
+  if (!P.tBg) { ox.fillStyle = P.bg; ox.fillRect(0, 0, W, H); }
+  ox.fillStyle = P.ink;
+
+  if (s) {
+    for (var r = 0; r < s.rows; r++) for (var c = 0; c < s.cols; c++) {
+      var v = s.g[r * s.cols + c];
+      if (P.inv) v = 1 - v;
+      v = Math.pow(Math.max(0, Math.min(1, v)), P.gam);
+
+      var k;                                   // 0..1 how big this dot is
+      if (P.mode === 'on') k = v >= P.thr ? 1 : 0;
+      else if (P.mode === 'size') k = v;
+      else k = v >= P.thr ? Math.min(1, (v - P.thr) / Math.max(0.001, 1 - P.thr) * 0.6 + 0.4) : 0;
+      if (k <= 0.02) continue;
+
+      var side = pitch * P.fill * k;
+      var cx = c * pitch + pitch / 2, cy = r * pitch + pitch / 2;
+      dot(ox, cx - side / 2, cy - side / 2, side, P.rad);
+    }
+  }
+
+  /* the reference: the real font, same font-size, same baseline grid */
+  if (P.ref && P.refTxt) {
+    var FONT = '700 ' + P.fs + 'px "OffBit Trial", monospace';
+    /* Size the canvas from the glyph's REAL metrics, not from the output's
+       height. A cap is 13 dots = 0.70em tall, so a 13-dot-wide image whose
+       source is landscape gives a shorter canvas and the letter loses its
+       apex — which reads as "the tool is broken" rather than "the box is
+       short". Resizing a canvas resets its context, so the font is set twice
+       on purpose: once to measure, once to draw. */
+    rx.font = FONT;
+    var m = rx.measureText(P.refTxt);
+    var asc = m.actualBoundingBoxAscent || P.fs * 0.7;
+    var desc = m.actualBoundingBoxDescent || 0;
+    var rw = Math.max(1, Math.ceil(m.width) + 10);
+    var rh = Math.max(H, Math.ceil(asc + desc) + 4);
+    refc.width = rw; refc.height = rh;
+    rx.clearRect(0, 0, rw, rh);
+    if (!P.tBg) { rx.fillStyle = P.bg; rx.fillRect(0, 0, rw, rh); }
+    rx.font = FONT;
+    rx.fillStyle = P.ink;
+    rx.textBaseline = 'alphabetic';
+    rx.fillText(P.refTxt, 5, rh - 2 - desc);
+    refc.style.display = '';
+  } else {
+    refc.style.display = 'none';
+  }
+
+  /* Zoom is a CSS size on the same canvas, never a bigger render: the export
+     must be the real grid, and a preview that quietly re-renders at 8x would
+     hide exactly the aliasing you opened the tool to check. */
+  out.style.width = Math.round(W * Z) + 'px';
+  out.style.height = Math.round(H * Z) + 'px';
+  refc.style.width = Math.round(refc.width * Z) + 'px';
+  refc.style.height = Math.round(refc.height * Z) + 'px';
+
+  el('grid').textContent = s
+    ? s.cols + ' x ' + s.rows + ' dots  ·  pitch ' + pitch.toFixed(2) + 'px  ·  ' +
+      W + ' x ' + H + 'px  ·  ' + (s.rows / CAP_DOTS).toFixed(2) + 'x cap height'
+    : 'drop an image';
+}
+
+/* ======================================================================
+   INPUT
+   ====================================================================== */
+function load(fileOrUrl) {
+  var i = new Image();
+  i.onload = function () {
+    iw = i.naturalWidth; ih = i.naturalHeight;
+    var t = document.createElement('canvas');
+    t.width = iw; t.height = ih;
+    var tx = t.getContext('2d', { willReadFrequently: true });
+    tx.drawImage(i, 0, 0);
+    src = tx.getImageData(0, 0, iw, ih).data;
+    img = i;
+    draw();
+  };
+  i.onerror = function () { el('grid').textContent = 'could not read that image'; };
+  if (typeof fileOrUrl === 'string') i.src = fileOrUrl;
+  else { var fr = new FileReader(); fr.onload = function () { i.src = fr.result; }; fr.readAsDataURL(fileOrUrl); }
+}
+
+el('drop').addEventListener('click', function () { el('file').click(); });
+el('file').addEventListener('change', function () { if (this.files[0]) load(this.files[0]); });
+['dragenter', 'dragover'].forEach(function (e) {
+  el('drop').addEventListener(e, function (ev) { ev.preventDefault(); this.classList.add('over'); });
+});
+['dragleave', 'drop'].forEach(function (e) {
+  el('drop').addEventListener(e, function (ev) { ev.preventDefault(); this.classList.remove('over'); });
+});
+el('drop').addEventListener('drop', function (ev) {
+  var f = ev.dataTransfer.files[0]; if (f) load(f);
+});
+addEventListener('dragover', function (e) { e.preventDefault(); });
+addEventListener('drop', function (e) {
+  e.preventDefault();
+  var f = e.dataTransfer && e.dataTransfer.files[0]; if (f) load(f);
+});
+addEventListener('paste', function (e) {
+  var it = e.clipboardData && e.clipboardData.items;
+  for (var i = 0; it && i < it.length; i++) {
+    if (it[i].type.indexOf('image') === 0) { load(it[i].getAsFile()); return; }
+  }
+});
+
+function bind(id, key, fmt, isNum) {
+  var e = el(id), v = el('v' + id.charAt(0).toUpperCase() + id.slice(1));
+  var go = function () {
+    P[key] = e.type === 'checkbox' ? e.checked : (isNum === false ? e.value : +e.value);
+    if (v) v.textContent = fmt ? fmt(P[key]) : P[key];
+    draw();
+  };
+  e.addEventListener('input', go);
+  go();
+}
+bind('fs', 'fs');
+bind('cols', 'cols');
+bind('rad', 'rad', function (x) { return x.toFixed(3); });
+bind('fill', 'fill', function (x) { return x.toFixed(2); });
+bind('thr', 'thr', function (x) { return x.toFixed(2); });
+bind('gam', 'gam', function (x) { return x.toFixed(2); });
+bind('inv', 'inv');
+bind('alpha', 'alpha');
+bind('trim', 'trim');
+bind('tBg', 'tBg');
+bind('ref', 'ref');
+bind('cInk', 'ink', null, false);
+bind('cBg', 'bg', null, false);
+el('refTxt').addEventListener('input', function () { P.refTxt = this.value; draw(); });
+
+var zoomSeg = el('zoom');
+zoomSeg.addEventListener('click', function (e) {
+  if (e.target.tagName !== 'BUTTON') return;
+  [].forEach.call(zoomSeg.children, function (b) { b.classList.toggle('on', b === e.target); });
+  Z = +e.target.getAttribute('data-z');
+  draw();
+});
+
+var seg = el('mode');
+seg.addEventListener('click', function (e) {
+  if (e.target.tagName !== 'BUTTON') return;
+  [].forEach.call(seg.children, function (b) { b.classList.toggle('on', b === e.target); });
+  P.mode = e.target.getAttribute('data-m');
+  draw();
+});
+
+/* ---- export ----
+   Re-rendered at the requested scale rather than upscaled, so a 4x export is
+   four times the resolution and not four times the same pixels. */
+function exportPng(scale) {
+  var keep = P.fs;
+  P.fs = keep * scale;
+  draw();
+  var url = out.toDataURL('image/png');
+  P.fs = keep; draw();
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'dotmatrix-' + P.cols + 'x.png';
+  a.click();
+}
+el('bPng').addEventListener('click', function () { exportPng(1); });
+el('bPng4').addEventListener('click', function () { exportPng(4); });
+
+/* the font has to be there before the reference letter is drawn, or it silently
+   falls back to a serif and the whole comparison is a lie */
+if (document.fonts && document.fonts.load) {
+  document.fonts.load('700 80px "OffBit Trial"').then(function () { draw(); });
+}
+draw();
+</script>
+</body>
+</html>

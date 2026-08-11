@@ -2479,6 +2479,35 @@ arm + open site   →   scroll it (or Shift+S to sweep)   →   dash.html, reloa
 Full write-up, including why `unattributed` is usually the interesting line, is
 in `PERF.md` → `## How to measure` → `### The dashboard`.
 
+### Dot matrix — `tools/dotmatrix.html`
+
+Drop an image in, get it back on OffBit Dot's grid, on `#141414`. For turning a
+decorative letter PNG into something that can sit next to OffBit type as a drop
+cap. Drag/click/paste, then export at 1× or 4×.
+
+**The grid was measured off the font, not eyeballed off a screenshot** — the
+face was rendered at 700/1400/2000px and the pixels were read back
+(`tools/_offbit-measure.html` is the rig, `tools/ev-offbit-shape.js` the fit):
+
+| | |
+|---|---|
+| pitch | **0.054 × font-size** — 18.5 dots per em |
+| dot side | **exactly the pitch**. They tile edge to edge, which is why strokes merge into one mass instead of reading as beads |
+| corner radius | **0.466 × side** — a **rounded square, not a circle** |
+| advance | whole dots per glyph (`B` 11, `A` 13); cap height **13 dots** = 0.702em |
+| colour | `#FFF1E9` on `#141414` |
+
+The shape is the part that matters and the part that is easy to get wrong. A
+circle of diameter = pitch touches its neighbour at a single point, so a stroke
+scallops and falls apart; the real dot has about 7% of each side flat, so
+neighbours meet along an edge and leave a small four-pointed notch at every
+crossing. That notch is the entire texture of the typeface. Fitting the real
+glyph's edge profile: rounded square RMS 0.008, circle RMS 0.018 — 2.2× better.
+
+Set **match font-size** to whatever the OffBit text beside it is set at and the
+two grids land on the same lattice; the panel renders a real OffBit glyph beside
+the output so you can check that they do.
+
 ### THE BEYONDER — `tools/beyonder.html`
 
 > **This tool has its own handoff: `BEYONDER.md`.** Read that before touching it
