@@ -62,8 +62,15 @@ main{flex:1;display:flex;min-height:0}
   linear-gradient(45deg,#0e0d0c 25%,transparent 25%,transparent 75%,#0e0d0c 75%);
   background-size:22px 22px;background-position:0 0,11px 11px;
   display:flex;align-items:center;justify-content:center;padding:26px}
-#wrap{display:flex;align-items:flex-end;gap:0;background:#141414;padding:0}
-canvas{display:block;image-rendering:pixelated;transform-origin:bottom left}
+#wrap{display:flex;align-items:flex-end;gap:18px}
+.fig{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
+.fig figcaption{color:var(--dimmer);font-size:10px;letter-spacing:.09em;
+  text-transform:uppercase;white-space:nowrap}
+canvas{display:block;image-rendering:pixelated;background:#141414}
+#hold{position:relative;min-width:150px;min-height:96px;display:flex;align-items:flex-end}
+#none{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  border:1px dashed rgba(250,229,216,.18);border-radius:4px;color:var(--dimmer);
+  font-size:11px;padding:0 18px;text-align:center;line-height:1.5}
 
 #drop{border:1px dashed rgba(250,229,216,.24);border-radius:6px;padding:20px 12px;
   text-align:center;color:var(--dimmer);cursor:pointer;margin-bottom:14px;
@@ -180,8 +187,17 @@ h3{font:400 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
 
 <div id="stage">
   <div id="wrap">
-    <canvas id="out" width="10" height="10"></canvas>
-    <canvas id="refc" width="10" height="10"></canvas>
+    <figure class="fig">
+      <figcaption id="capOut">your image</figcaption>
+      <div id="hold">
+        <canvas id="out" width="10" height="10"></canvas>
+        <div id="none">nothing loaded yet &mdash;<br>drop an image on the left</div>
+      </div>
+    </figure>
+    <figure class="fig" id="figRef">
+      <figcaption>OffBit Dot &middot; the real font, for comparison</figcaption>
+      <canvas id="refc" width="10" height="10"></canvas>
+    </figure>
   </div>
 </div>
 </main>
@@ -332,6 +348,13 @@ function draw() {
   out.style.height = Math.round(H * Z) + 'px';
   refc.style.width = Math.round(refc.width * Z) + 'px';
   refc.style.height = Math.round(refc.height * Z) + 'px';
+
+  /* The empty state used to be a 69x4 dark strip next to an unlabelled glyph,
+     which reads as a stray screenshot rather than as a reference. Say what
+     each thing is, and show nothing rather than a sliver of nothing. */
+  out.style.display = s ? '' : 'none';
+  el('none').style.display = s ? 'none' : 'flex';
+  el('capOut').textContent = s ? 'your image, on the grid' : 'your image';
 
   el('grid').textContent = s
     ? s.cols + ' x ' + s.rows + ' dots  ·  pitch ' + pitch.toFixed(2) + 'px  ·  ' +
