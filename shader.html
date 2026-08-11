@@ -1,0 +1,1680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cnvrt — shimmer line</title>
+
+<!-- ===========================================================================
+     SHIMMER LINE
+
+     A bright uneven white line with a soft glow, grains dissolving away from
+     it on both sides, and black below. It does not slide up the page — it
+     DEVELOPS: individual stretches of it run ahead or fall behind, and every
+     so often a stretch leaps forward and merges with the one in front.
+
+     Layout
+       .hero    fixed 100vh. Inside it a 114.72vh COMPOSITION (the Figma
+                'hero frame', 1239/1080) holding the video and the vignette.
+                Drifts up at heroPar x scroll — it never pins.
+       .black   the flat black section the page continues into.
+       #env     fixed full-viewport WebGL canvas, alpha-blended on top. It
+                never samples the video; the video shows through wherever the
+                shader's alpha is low.
+
+     Geometry from Figma 490:2199 —
+       frame        1920 x 1239        the whole composition
+       100vh line   y = 1080           1239/1080 = 114.72vh
+       vignette     y = 1080 -> 1239   the 159px the video overflows past it
+       video        2404 x 1357 at (-242,-59), centre (960, 619.5) = dead
+                    centre, so the placement is a pure centred zoom
+
+     Runs straight off disk (file://): no build step, no CDN, no fetch.
+
+     Press ` for the panel.
+     ======================================================================== -->
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+:root{
+  --ar: 1.770795;            /* hero.mp4 is 3832x2164 */
+  --comp-h:   114.72vh;
+  --media-z:  1.0952;
+  --vig-top:  100vh;
+  --hero-y:   0px;
+  --env:      1.20;
+  --fade:     20;
+}
+
+html{background:#000}
+body{
+  background:#000;
+  color:#fff;
+  font:400 12px/1.4 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  overflow-x:hidden;
+}
+
+.hero{ position:fixed; inset:0; overflow:hidden; z-index:0; background:#000 }
+.hero[data-off="1"]{ visibility:hidden }
+
+.hero__comp{
+  position:absolute; top:0; left:0;
+  width:100%; height:var(--comp-h);
+  overflow:hidden;
+  transform:translate3d(0, calc(-1 * var(--hero-y)), 0);
+  will-change:transform;
+}
+
+/* Cover the COMPOSITION — not the viewport — then apply the Figma zoom. At
+   1920x1239 this reproduces the placed rect exactly, and it stays correct at
+   other aspect ratios where hard-coded offsets would drift. */
+.hero__media{
+  --mw: max(100vw, calc(var(--comp-h) * var(--ar)));
+  --mh: max(var(--comp-h), calc(100vw / var(--ar)));
+  position:absolute; left:50%; top:50%;
+  width:var(--mw); height:var(--mh);
+  transform:translate(-50%,-50%) scale(var(--media-z));
+}
+.hero__bg{
+  position:absolute; inset:0; width:100%; height:100%;
+  object-fit:cover; object-position:center; pointer-events:none;
+}
+
+/* The vignette belongs to the HERO, not the shader — it drifts with the
+   composition and is independent of the line. Set vigDepth to 0 to remove it
+   entirely; it is kept because it is an actual node in the Figma frame, not
+   because the shader needs it. */
+.hero__vig{
+  position:absolute; left:0; right:0;
+  top:var(--vig-top); bottom:0;
+  pointer-events:none;
+}
+
+.pin{
+  position:relative;
+  height:calc((var(--env) * 100 + var(--fade)) * 1vh);
+  pointer-events:none;
+}
+
+.black{ position:relative; z-index:1; height:130vh; background:#000 }
+.black__mark{
+  position:absolute; top:24px; left:24px;
+  font-size:10px; letter-spacing:.18em; text-transform:uppercase;
+  color:rgba(255,255,255,.22);
+}
+body[data-marks="0"] .black__mark{display:none}
+
+#env{
+  position:fixed; inset:0; width:100%; height:100%;
+  display:block; pointer-events:none; z-index:2;
+}
+
+/* ------------------------------------------------------------- panel --- */
+#panel{
+  position:fixed; top:0; right:0;
+  width:340px; height:100vh; overflow-y:auto; z-index:50;
+  padding:12px 14px 44px;
+  background:rgba(7,7,7,.91);
+  backdrop-filter:blur(16px);
+  border-left:1px solid rgba(255,255,255,.13);
+  font-size:10px; letter-spacing:.02em;
+  overscroll-behavior:contain;
+}
+#panel[hidden]{display:none}
+#panel::-webkit-scrollbar{width:7px}
+#panel::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16)}
+
+#panel h2{
+  font-size:10px;font-weight:400;text-transform:uppercase;letter-spacing:.18em;
+  color:rgba(255,255,255,.5);padding-bottom:8px;
+  border-bottom:1px solid rgba(255,255,255,.12);
+}
+.grp{
+  margin:14px 0 5px;padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.09);
+  color:rgba(255,255,255,.4);
+  text-transform:uppercase;letter-spacing:.15em;
+}
+.grp small{
+  display:block;margin-top:3px;text-transform:none;letter-spacing:0;
+  color:rgba(255,255,255,.3);line-height:1.5;
+}
+
+.row{display:flex;align-items:center;gap:7px;margin:4px 0}
+.row label{
+  flex:0 0 96px;color:rgba(255,255,255,.68);cursor:help;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.row input[type=range]{
+  flex:1;height:2px;min-width:0;
+  -webkit-appearance:none;appearance:none;
+  background:rgba(255,255,255,.2);outline:none;
+}
+.row input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:10px;height:10px;border-radius:50%;background:#fff;cursor:pointer;
+}
+.row input[type=range]::-moz-range-thumb{
+  width:10px;height:10px;border:0;border-radius:50%;background:#fff;cursor:pointer;
+}
+.row output{flex:0 0 54px;text-align:right;color:#fff;font-variant-numeric:tabular-nums}
+.row.dirty label{color:#9be89b}
+
+.chk{display:flex;align-items:center;gap:7px;margin:6px 0;color:rgba(255,255,255,.68)}
+.chk input{accent-color:#fff;cursor:pointer}
+.chk label{cursor:pointer}
+
+#read{
+  margin-top:10px;padding:8px 9px;
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.1);
+  line-height:1.7;font-variant-numeric:tabular-nums;
+}
+#read b{color:#fff;font-weight:400}
+#read span{color:rgba(255,255,255,.5)}
+
+.btns{display:flex;gap:6px;margin-top:12px}
+.curvewrap{margin:8px 0 12px}
+.curvewrap canvas{
+  display:block; width:100%; height:150px;
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.11);
+  border-radius:3px; cursor:crosshair; touch-action:none;
+}
+.curvelab{
+  display:flex; justify-content:space-between;
+  color:rgba(255,255,255,.34); font-size:9px; padding-top:4px;
+}
+
+#panel button{
+  flex:1;padding:7px 4px;font:inherit;font-size:9px;
+  letter-spacing:.11em;text-transform:uppercase;
+  color:#000;background:#fff;border:0;cursor:pointer;
+}
+#panel button.ghost{
+  color:rgba(255,255,255,.8);background:transparent;
+  border:1px solid rgba(255,255,255,.24);
+}
+#panel textarea{
+  width:100%;height:120px;margin-top:8px;
+  font:inherit;font-size:9px;line-height:1.45;
+  color:#9be89b;background:#000;
+  border:1px solid rgba(255,255,255,.16);padding:7px;resize:vertical;
+}
+
+#hint{
+  position:fixed;left:14px;bottom:12px;z-index:40;
+  font-size:10px;letter-spacing:.1em;color:rgba(255,255,255,.4);
+  mix-blend-mode:difference;pointer-events:none;
+}
+#hint b{color:rgba(255,255,255,.85);font-weight:400}
+body[data-marks="0"] #hint{display:none}
+</style>
+</head>
+
+<body>
+
+<section class="hero" id="hero">
+  <div class="hero__comp" id="comp">
+    <div class="hero__media">
+      <video class="hero__bg" src="assets/video/hero.mp4"
+             autoplay muted loop playsinline preload="auto"></video>
+    </div>
+    <div class="hero__vig" id="vig" aria-hidden="true"></div>
+  </div>
+</section>
+
+<div class="pin" id="pin"></div>
+
+<section class="black"><p class="black__mark">black section</p></section>
+
+<canvas id="env"></canvas>
+
+<aside id="panel" hidden>
+  <h2>shimmer line</h2>
+  <div id="read"></div>
+  <div id="sliders"></div>
+  <div class="btns">
+    <button id="copy">copy</button>
+    <button id="reset" class="ghost">reset</button>
+  </div>
+  <textarea id="out" readonly spellcheck="false"></textarea>
+</aside>
+
+<p id="hint"><b>`</b> panel &nbsp;·&nbsp; scroll to envelope</p>
+
+<script>
+/* ===========================================================================
+   THE MODEL
+
+   Scroll drives ONE number, p. Time drives everything else. Every pixel is a
+   pure function of (p, t) with no accumulated state, so scrolling back up
+   retraces the identical shape and the same stretches jump at the same
+   places — fully scrubbable, no drift on a fast flick.
+
+   The boundary height at column x is built from four terms:
+
+       base    a straight line travelling from below the viewport to above it
+       ridge   the large silhouette, morphing very slowly
+       sway    the idle breathing — small, and extremely slow
+       lag     how far THIS stretch is running behind (see below)
+
+   Everything else — the white line, its glow, the grains — hangs off the
+   signed distance from that boundary.
+
+   ---------------------------------------------------------------------------
+   THE DROPS
+
+   The brief: it should not slide, it should develop, like water rolling down
+   a window — uneven, and now and then a piece leaps forward and merges with
+   one ahead of it.
+
+   Measured off shade-ref-act-moving.mp4 (1904x616, 285 frames), tracking the
+   boundary per column and regressing each column's motion against the line's
+   motion as a whole:
+
+     per-column gain    mean 1.00, std 0.22, range 0.65x .. 1.39x
+                        47.5% of columns move outside 0.8-1.2x
+     shape vs body      for every 1px the line travels, its shape changes
+                        0.39px. It is nowhere near a rigid translation.
+     lurches            median column lurch 1.9px, p90 7.3px, p99 35.8px,
+                        p99.9 89.6px — a very heavy tail. Jumps land in 6.2%
+                        of frames and take ~150 of 1904 columns at once, so
+                        they arrive as PATCHES, not single columns.
+
+   Both behaviours come out of one mechanism. Each cell carries a sawtooth
+
+       saw = fract(p * jumpRate + phase)
+
+   and lags behind the travel line by lagMax * saw. The lag grows steadily —
+   that is the uneven creep, since neighbouring cells sit at different points
+   in their cycle — and then discharges over the last `snap` of the cycle,
+   which is the leap forward. Because it is fract() of p it is monotonic and
+   reversible, and because `phase` is drawn from a noise smooth in cell index,
+   neighbouring cells wrap together and jump as a patch.
+
+   Both lag and lead taper out through 4p(1-p), so at p=0 and p=1 every column
+   is flush with the travel line and the frame closes completely.
+
+   ---------------------------------------------------------------------------
+   THE LINE   (measured off shade-ref-act.mp4, 1892x410, 382 frames)
+
+     page far above the boundary   luma 215.8
+     peak of the line              luma 239.0, at 3px ABOVE the boundary
+     below it                      205 -> 110 -> 77 -> 61 -> 49 over 16px,
+                                   then a grain tail out to ~50px
+     silhouette                    ptp 157px, spatial power at 450-1800px
+     idle sway                     dominant period 12.7s (!), second at 6.4s.
+                                   The line as a body moves only 5px ptp while
+                                   individual columns wobble 9.5px — it
+                                   breathes in place rather than drifting.
+
+   So the line is genuinely brighter than the page it sits on, it is thin, and
+   it is offset slightly to the light side. It is drawn ADDITIVELY: rgb is
+   raised without raising alpha, which over premultiplied blending is a true
+   add rather than a lerp toward white, so it glows over the video instead of
+   painting over it.
+
+   No haze layer, and as of the particle rework no dissolve zone either. The
+   blend is the beige torn-paper crumbs and nothing else: they thin upward
+   into the video and downward into the black, and the black under them is a
+   hard anti-aliased edge with nothing written past it.
+   ========================================================================= */
+
+var DEFAULTS = {
+  /* ---- scroll & motion ------------------------------------------------- */
+  env:         1.76,   //     vh of scroll the whole envelope takes
+  smoothScroll:0.24,   //     how fast the envelope chases the scrollbar.
+                       //     1 = instant, no smoothing. Frame-rate independent
+  ease:        1.01,   //     travel curve; >1 starts slow
+  heroPar:     0.3,   //     hero drift, as a multiple of scroll
+  slackBot:    206,     // px  how far below the fold the line starts
+  slackTop:    62,     // px  how far past the top it overshoots at p=1
+  fadeLen:     34,     // vh  scroll for the shader to fade out after p=1
+
+  /* ---- hero & vignette ------------------------------------------------- */
+  compH:       111.54, // vh  composition height — Figma 1239/1080
+  mediaZoom:   0.9754, //     video zoom inside the composition
+  vigTop:      105.5,  // vh  where the fade starts. 100 = exactly the fold
+  vigDepth:    1,   //     0 removes the vignette completely
+
+  /* ---- the silhouette -------------------------------------------------- */
+  ridgeAmp:    194,     // px  half-amplitude of the big shape (ref ptp ~157)
+  ridgeLobes:  1.1,   //     big lobes across the width
+  ridgeFine:   0.44,   //     weight of the second, finer octave
+  ridgeDrift:  0.008,  //     how fast the big shape morphs. Very slow.
+
+  /* ---- the sway — the idle animation ----------------------------------- */
+  swayAmp:     77,     // px  amplitude of the breathing
+  swayLobes:   1.5,   //     lobes across the width
+  swaySpeed:   0.08,  //     ~1/period. 0.08 = the reference's 12.7s cycle
+
+  /* ---- develop: lead / lag / jump -------------------------------------- */
+  creepTaper:  0.45,   //     power on the taper. Low = creep stays alive across
+                       //     the whole scroll instead of only near p=0.5
+  leadAmp:     65,     // px  how far a stretch runs ahead of or behind
+  leadLobes:   3.25,   //     width of a leading/lagging stretch
+  leadEvolve:  0.9,   //     how much the lead pattern changes across p
+  lagMax:      68,    // px  how far a cell falls behind before it leaps
+  jumpRate:    5.9,   //     leaps per cell over the whole scroll
+  jumpCells:   7,   //     cells across the width
+  jumpSnap:    0.215,   //     share of the cycle the leap takes. Small = sharp
+  jumpClump:   0.6,   //     how much neighbours leap together, as a patch
+  cellJitter:  0.08,   //     irregularity of the cell boundaries
+  cellBlend:   0.325,   //     softness between cells. 0 = vertical cliffs
+
+  /* ---- the white line -------------------------------------------------- */
+  lineW:       4.6,    // px  core half-width
+  lineBright:  0.96,   //     core brightness (additive)
+  lineOff:     3,    // px  offset to the light side. Reference: 3px
+  glowW:       12,     // px  glow half-width
+  glowBright:  0.16,   //     glow brightness (additive)
+  thickVar:    12.04,   //     how uneven the thickness is
+  thickLobes:  20,    //     how often the thickness changes along the line
+  thickSpeed:  0.12,   //     how fast the thickness shimmers
+  warm:        1.0,   //     0 = pure white, 1 = the tint below
+
+  /* ---- the torn edge --------------------------------------------------- */
+  edgeAA:      10.0,   // px  width of the black's anti-aliased edge. Not a ramp
+  tearAmp:     5,    // px  fine raggedness on the silhouette itself
+  tearScale:   107,     // px  wavelength of that raggedness
+
+  /* ---- the paper particles — THE ONLY BLEND ---------------------------- */
+  partSize2:   9.0,   // px  SECOND crumb layer, its own seed grid. A whole
+                       //     new population, not a re-threshold of the first
+  partAmount2: 0.0,   //     its amount. 0 switches the layer off
+  partSize:    7.0,    // px  seed spacing. Crumbs come out roughly half this
+  partRad:     0.7,   //     kernel radius in cells. >0.5 lets neighbours merge
+  partThr:     0.3,   //     field threshold, against a mean of ~0.3*pi*rad^2.
+                       //     Graded by eye against the reference: 0.48 packs the
+                       //     crumbs into a speckled mass, 0.70 separates them
+                       //     into readable torn pieces
+  partAA:      2.8,   // px  edge softness, in real pixels. THE anti-pixel lever
+  partWarp:    0.6,   //     domain warp. 0 = round blobs, high = torn fibres
+  partWarpSc:  0.85,   //     warp frequency, in cells. High = finer raggedness
+  partDrift:   0.012,   //     how fast each seed wanders. Reference is very slow
+  partWander:  0.18,   //     how far it wanders, in cells
+  partUp:      150,     // px  how far the crumbs reach up into the video
+  partDown:    200,     // px  how far they reach down into the black
+  partDensUp:  1,   //     crumb density above the line
+  partDensDn:  1,   //     crumb density below the line
+  partClump:   0.0,   //     how strongly crumbs gather into drifts
+  partClumpSc: 0.014,  //     per px. 0.012 -> ~80px drifts
+  partAnchor:  0.56,   //     0 = field stays put (correct), 1 = rides the edge
+  paperR:      0.86,  //     the paper. Reference #DAD9CF = 218,217,207
+  paperG:      0.84,  //
+  paperB:      0.74,  //
+  partBright:  1.25,   //     overall crumb brightness
+  partSizeVar: 0.22,   //     per-crumb size spread. 0 = every crumb identical
+  partReachVar:0.06,   //     how uneven the band depth is across the width
+  partReachSc: 655,    // px  wavelength of that unevenness
+  abAmt:       6.0,    // px  chromatic aberration on the line at its thickest
+  abBoost:     15.0,   //     extra glow there, on the same exponential curve
+  abPow:       2.8,   //     how sharply both concentrate on the thick parts
+  persLean:    35,     // px  how far crumbs lean TOWARD the shimmer line
+  persLeanD:   90,     // px  distance over which that lean reaches full
+  persTrail:   0.55,   //     extra vertical stretch BEHIND the front only
+  persAnticip: 0.22,   //     a gathering just ahead of the front
+  partStretch: 1.0,   //     vertical elongation. Crumbs streak along the
+                       //     direction the line travels, so the band below
+                       //     reads as a wake rather than as scattered dust
+  devAmp:      345,    // px  how hard the resistance field warps the front.
+                       //     0 = the old sweeping line exactly. Islands start
+                       //     detaching around twice the vertical wavelength
+  devScale:    210,    // px  horizontal wavelength of that field
+  devAspect:   0.75,   //     vertical stretch. >1 makes tall fingers
+  devDrift:    0.0015,   //     slow evolution. 0 = dead static, which is the
+                       //     point — the front moves, the field never does
+  partCore:    140,     // px  how far the paper stays SOLID either side of the
+                       //     tear before it granulates into crumbs
+  partCoreAmt: 1.0,
+  partFloor:   0.1,
+  lineDissolve:1.0,   //     the shimmer is made OF the crumbs, not laid over
+                       //     them. 0 = the old separate continuous stroke   //     proximity below which crumbs vanish outright.
+                       //     Stops the far tail reading as dirt on the video   //     how solid that core is. 0 removes it entirely
+  curveX1:     0.0,   //     the falloff curve, dragged in the panel. Handles of
+  curveY1:     0.221,   //     a cubic bezier from (0,1) at the line to (1,0) at
+  curveX2:     0.845,   //     the reach. These defaults reproduce the old
+  curveY2:     0.0,   //     partFall 1.65 shape almost exactly
+  partAmount:  0.55,   //     THE amount lever. Divides the threshold. Measured
+                       //     covered area: 0.5 -> 0.47x, 2.0 -> 1.44x. It
+                       //     compresses at the top as coverage saturates
+  partScatter: 0.08,   //     random per-seed weight. Opens voids and clusters
+                       //     in what is otherwise an even lattice of seeds
+  partOverLine:0.0,   //     how much a crumb occludes the shimmer line it
+                       //     sits on. 0 = the line paints cleanly over them
+  partOpacProx:1,   //     how much crumb OPACITY follows proximity to the
+                       //     line. 0 = every crumb equally solid to the edge
+  tintR:       1,  //     the shimmer's colour. Measured off the TV's own
+  tintG:       0.86,  //     light in hero.mp4: #B6A68D normalised. `warm`
+  tintB:       0.62,  //     is still the mix from pure white toward it
+  partOpac:    1.0,   //     the crumbs' OWN opacity, independent of the line
+  partOpacVar: 0.06,   //     per-crumb variation of it, so they are not a sheet
+  partGlow:    0.1,   //     soft halo per crumb, following its own opacity
+  partGlowW:   0.55,   //     how far that halo reaches past the crumb edge
+  partLit:     0.7,   //     extra brightness where the line lights them. High
+                       //     values blow the crumbs to white and lose the beige
+  partLitW:    4.7,   //     reach of that lighting, as a multiple of glowW
+
+  /* ---- render ---------------------------------------------------------- */
+  filmGrain:   0,  //     film grain over the black
+  grainRate:   0,     // hz  grain refresh; 0 = static
+  dither:      0.006,  //     alpha dither — kills banding
+  pxBudget:    6    // Mpx rendered before upscaling. High = smooth
+};
+
+var P = {};
+for (var k in DEFAULTS) P[k] = DEFAULTS[k];
+
+/* ['group', 'note'] starts a section; otherwise [key,min,max,step,tip]. */
+var SPEC = [
+  ['scroll & motion'],
+  ['env',        0.40,  8.00,  0.01,  'vh of scroll for the whole envelope'],
+  ['smoothScroll',0.01, 1.00,  0.01,  'how fast the envelope chases the scrollbar. 1 = instant. Low lags further behind the wheel and settles more slowly. Damped frame-rate independently, so it feels the same at 60Hz and 120Hz'],
+  ['ease',       0.40,  2.50,  0.01,  'travel curve. >1 starts slow, <1 starts fast'],
+  ['heroPar',    0.00,  1.00,  0.01,  'hero drift as a multiple of scroll. 0 = pinned, 1 = normal scroll'],
+  ['slackBot',   0,     400,   1,     'px the line sits below the fold at p=0'],
+  ['slackTop',   0,     500,   1,     'px it overshoots the top at p=1. Raise it if a sliver of video survives at the end'],
+  ['fadeLen',    0,     80,    1,     'vh for the shader to fade out once p=1'],
+
+  ['hero & vignette'],
+  ['compH',      100,   160,   0.01,  'vh — composition height. Figma: 1239/1080 = 114.72'],
+  ['mediaZoom',  0.80,  2.00,  0.0001,'video zoom inside the composition. Figma: 1.0952'],
+  ['vigTop',     55,    120,   0.1,   'vh of the composition where the fade starts. 100 = exactly the fold'],
+  ['vigDepth',   0.00,  1.00,  0.01,  'vignette strength. 0 removes it completely'],
+
+  ['silhouette', 'The big shape. Reference: 157px peak-to-trough, power at 450-1800px wavelengths — a few broad lobes, not a jagged ridge.'],
+  ['ridgeAmp',   0,     260,   1,     'px half-amplitude of the big shape'],
+  ['ridgeLobes', 0.50,  9.00,  0.05,  'big lobes across the width'],
+  ['ridgeFine',  0.00,  1.50,  0.01,  'weight of the second, finer octave'],
+  ['ridgeDrift', 0.000, 0.200, 0.001, 'how fast the big shape morphs. The reference is nearly still'],
+
+  ['sway — idle animation', 'Measured dominant period 12.7 SECONDS. The line breathes in place: as a body it moves 5px while single columns wobble 9.5px.'],
+  ['swayAmp',    0,     120,   1,     'px amplitude of the breathing'],
+  ['swayLobes',  0.50,  16.0,  0.10,  'lobes across the width. Higher = the wobble is more local'],
+  ['swaySpeed',  0.000, 1.000, 0.002, 'roughly 1/period in seconds. 0.08 = a 12.7s cycle, matching the reference. 0 = frozen'],
+
+  ['develop — lead & lag', 'Stretches run ahead or behind instead of the line sliding rigidly. Measured spread: 0.65x to 1.39x of the mean rate. If the envelope reads as one slab moving up, it is leadAmp/lagMax being small against the total travel, and creepTaper flattening them at the ends.'],
+  ['creepTaper',  0.05,  1.00,  0.01,  'power on the 4p(1-p) taper that lets lead and lag live. 1 = the old curve, alive only around p=0.5 and rigid at both ends. 0.4-0.5 keeps the creep alive across nearly the whole scroll. It still hits exactly 0 at p=0 and p=1, so the frame always closes'],
+  ['leadAmp',    0,     400,   1,     'px a stretch runs ahead of or behind the travel line'],
+  ['leadLobes',  0.50,  12.0,  0.05,  'how wide a leading/lagging stretch is'],
+  ['leadEvolve', 0.00,  12.0,  0.05,  'how much the lead pattern reshuffles across the scroll. 0 = one fixed shape that just translates'],
+
+  ['develop — the leap', 'Each cell lags further and further behind, then discharges forward and merges with the one ahead. Reference: leaps in 6.2% of frames, ~8% of the width at a time, p99.9 lurch 89.6px.'],
+  ['lagMax',     0,     400,   1,     'px a cell falls behind before it leaps. THE leap size'],
+  ['jumpRate',   0.00,  14.0,  0.05,  'leaps per cell over the whole scroll. 0 = no leaping, just lag'],
+  ['jumpCells',  1.00,  40.0,  0.25,  'cells across the width. Few = big patches leap together'],
+  ['jumpSnap',   0.02,  0.90,  0.005, 'share of the cycle the leap takes. Small = a sharp snap, large = a smooth surge'],
+  ['jumpClump',  0.00,  1.00,  0.01,  'how much neighbouring cells share a phase and leap as one patch'],
+  ['cellJitter', 0.00,  1.50,  0.01,  'irregularity of the cell boundaries, so patches are not evenly spaced'],
+  ['cellBlend',  0.02,  0.50,  0.005, 'softness between neighbouring cells. Near 0 gives hard vertical cliffs at every boundary; near 0.5 blends the patches away into one continuous undulation'],
+
+  ['the white line', 'Drawn additively — it raises rgb without raising alpha, so it glows over the video instead of painting over it. Reference peak: luma 239 against a 216 page, 3px to the light side.'],
+  ['lineW',      0.3,   30.0,  0.1,   'px core half-width'],
+  ['lineBright', 0.00,  2.50,  0.01,  'core brightness'],
+  ['lineOff',    -20,   20,    0.5,   'px offset. Positive pushes the line to the light side, as in the reference'],
+  ['glowW',      1,     160,   1,     'px glow half-width'],
+  ['glowBright', 0.00,  1.20,  0.005, 'glow brightness'],
+  ['thickVar',   0.00,  28.0,  0.01,  'how uneven the thickness is, and the MAX thickness cap with it - the line half-width is lineW*(0.28+thickVar*noise), so this sets the top of that range while the thin end stays at 0.28*lineW. 0 = a perfectly even line'],
+  ['thickLobes', 0.50,  60.0,  0.5,   'how often the thickness changes along the line'],
+  ['thickSpeed', 0.00,  2.00,  0.005, 'how fast the thickness shimmers'],
+  ['warm',       0.00,  1.00,  0.01,  'how far the shimmer is pushed from pure white toward the tint below. 0 = pure white'],
+  ['tintR',      0.00,  1.00,  0.002, 'shimmer tint red. Measured off the TV in hero.mp4 - its core clips to white but the light it throws is #B6A68D, normalised 1.000'],
+  ['tintG',      0.00,  1.00,  0.002, 'shimmer tint green. Measured 0.912'],
+  ['tintB',      0.00,  1.00,  0.002, 'shimmer tint blue. Measured 0.772 - this is where the warmth of the TV light lives'],
+
+  ['render'],
+  ['filmGrain',  0.000, 0.200, 0.001, 'film grain over the black'],
+  ['grainRate',  0,     60,    1,     'hz grain refresh. ANY nonzero value re-randomises the dither that many times a second, which is temporal noise on every crumb edge no matter how slowly the seeds drift. 0 = static, and static is what reads as elegant'],
+  ['dither',     0.000, 0.050, 0.001, 'alpha dither. Kills banding — set to 0 to see what it fixes'],
+  ['pxBudget',   0.50,  12.0,  0.10,  'megapixels rendered before upscaling. HIGH = smooth. Drop it only if fps sags'],
+
+  ['devour', 'How the black EATS the hero. The boundary is a resistance field thresholded by a rising front, not a line y(x) — a height field gives every column one boundary and can only ever read as a layer sliding up. devAmp 0 reproduces that old behaviour exactly, so the slider runs continuously from sweeping line to full devouring.'],
+  ['devAmp',     0,     900,   5,     'px how hard the field warps the front. THE character control. 0 = a sweeping line. Islands start detaching ahead of the front once this passes roughly twice devScale*devAspect'],
+  ['devScale',   20,    600,   5,     'px horizontal wavelength of the field. Small = it eats in many small bites, large = broad slow lobes'],
+  ['devAspect',  0.20,  4.00,  0.05,  'vertical stretch of the field. Above 1 gives tall fingers reaching up; below 1 gives wide flat sheets'],
+  ['devDrift',   0.00,  0.40,  0.005, 'slow evolution of the field itself. 0 is dead static and is the default on purpose — the front moves, the field must not, or the translation comes back'],
+
+  ['the torn edge', 'The black itself. A hard anti-aliased edge, NOT a ramp - everything that softens the boundary is the paper crumbs sitting on top of it. Below this edge the black is mathematically untouched.'],
+  ['edgeAA',     0.50,  24.0,  0.10,  'px width of the black edge. Small = crisp. This is anti-aliasing, not a blend zone'],
+  ['tearAmp',    0,     40,    0.5,   'px fine raggedness on the silhouette. 0 = a smooth curve under the crumbs'],
+  ['tearScale',  4,     160,   1,     'px wavelength of that raggedness. Low = fibrous, high = wavy'],
+
+  ['PARTICLES - amount', 'HOW MANY. partAmount is the single global lever, use it first. partThr is the same axis but finer, and partScatter changes the count by opening voids rather than by shrinking everything evenly.'],
+  ['partAmount', 0.05,  12.0,  0.05,  'THE amount lever - but MEASURED, coverage saturates at 38.8% by 6 and 11 does nothing beyond that, while distinct crumb COUNT FALLS the whole way (8.9 at 0.6 down to 4.3 at 11) because they merge into each other. For more PARTICLES go DOWN, not up. 0.4 gives about 20 crumbs per scanline against 4 at 11'],
+  ['partThr',    0.05,  1.60,  0.01,  'field threshold, against a field whose mean is about 0.3*pi*partRad^2. Same axis as partAmount but finer. Low floods them into a sheet, high thins them to dust'],
+  ['partScatter',0.00,  1.00,  0.01,  'random per-seed weight. One seed per cell is an even lattice however far they wander, and this opens real voids and clusters. THE randomness lever'],
+
+  ['PARTICLES - size and shape', 'HOW BIG, and what shape. partSize is the master size control, everything else here varies or distorts it.'],
+  ['partSize2',  1.5,   24.0,  0.25,  'px SECOND crumb layer - a whole independent seed grid unioned with the first. This is the only way to add more crumbs once the first layer saturates, because partAmount only lowers a threshold and cannot exceed what the field can deliver. A different size here also mixes crumb sizes'],
+  ['partAmount2',0.00,  6.00,  0.05,  'amount of the second layer. OFF by default: measured at every scale from 5 to 20px it REDUCES distinct crumb count (20 per scanline down to 10.6-15.2) because it fills the gaps between layer-1 crumbs and merges them rather than adding separate ones. Useful only if you want coverage rather than count'],
+  ['partSize',   1.5,   24.0,  0.25,  'px PARTICLE SIZE. Below about 4 the crumbs stop reading as paper and turn into fine noise, whatever the coverage says. Seed spacing, crumbs come out roughly half of it. Reference crumbs are 1-4px, so 4-6 here'],
+  ['partSizeVar',0.00,  1.00,  0.01,  'per-crumb size spread. 0 makes every crumb the same size and the band reads as uniform pebbledash, high gives a mix of big and small torn pieces'],
+  ['partRad',    0.20,  1.40,  0.01,  'kernel radius in cells, how FAT each crumb is for a given size. Above 0.5 neighbours overlap and MERGE, which is what combines them into bigger torn pieces'],
+  ['abAmt',      0.00,  20.0,  0.1,   'px CHROMATIC ABERRATION of the shimmer line, at its thickest. The three channels draw at different offsets so the line itself fringes. Bounded by the line width - it can never spread into the crumb band the way the old glare did'],
+  ['abBoost',    0.00,  40.0,  0.1,  'extra GLOW where the line is thickest, on the same exponential curve as the aberration. Applied as 1 + boost, so 7 is an 8x glow at the peak and 1x everywhere the line is thin'],
+  ['abPow',      0.20,  8.00,  0.05,  'how sharply both concentrate on the thick stretches. High = only the very fattest parts fringe and bloom, and it fades to nothing elsewhere without any threshold'],
+  ['persLean',   0,     200,   1,     'px how far the crumbs lean TOWARD the shimmer line, growing with distance. 0 leaves them sitting where they fell, which is what reads as plain emanation'],
+  ['persLeanD',  4,     400,   2,     'px distance over which that lean reaches full. Short = only the far crumbs lean, long = the whole band leans gently'],
+  ['persTrail',  0.00,  3.00,  0.05,  'extra vertical stretch BEHIND the front only. NOTE it MULTIPLIES partStretch - 2.1 here with partStretch 1.2 gives crumbs 3.7x taller than wide, which reads as vertical smear rather than paper. Keep the product under about 2. Equal treatment either side is what reads as emanation'],
+  ['persAnticip',0.00,  1.00,  0.01,  'a gathering just AHEAD of the front - material piling up before it is taken, rather than the band being only debris left behind'],
+  ['partStretch',0.20,  5.00,  0.05,  'vertical elongation. 1 = round, BELOW 1 SQUASHES crumbs flat and they read as dust, higher draws them out along the direction the line travels so the band reads as a trail rather than as dust sitting there'],
+  ['partWarp',   0.00,  1.60,  0.01,  'domain warp. 0 = round blobs. High = torn fibrous edges. This is what makes them paper and not dust'],
+  ['partWarpSc', 0.20,  4.00,  0.02,  'warp frequency in cells. Above about 1 it shreds each crumb at SUB-CRUMB scale, which reads as noise; below 1 the raggedness is on the scale of the crumb itself, which reads as torn paper'],
+  ['partAA',     0.20,  4.00,  0.05,  'px edge softness in REAL pixels, held constant by fwidth at any size or warp. THE anti-pixel lever'],
+
+  ['PARTICLES - ABOVE the line', 'The gathering that runs AHEAD of the shimmer, over the video. Keep partUp shorter than partDown or the trail reads as a symmetric halo instead of a wake.'],
+  ['partUp',     0,     500,   2,     'px how far the crumbs reach UP into the video'],
+  ['partDensUp', 0.00,  1.00,  0.01,  'crumb amount above the line, biasing partAmount'],
+
+  ['PARTICLES - BELOW the line (the wake)', 'The trail the shimmer has already passed through, over the black. This is the long side. Past partDown the black is mathematically clean.'],
+  ['partDown',   0,     500,   2,     'px how far they reach DOWN into the black'],
+  ['partDensDn', 0.00,  1.00,  0.01,  'crumb amount below the line, biasing partAmount'],
+
+  ['PARTICLES - falloff curve', 'HOW DENSE at the shimmer line, and HOW IT DISSOLVES OUT. Drag the two handles. Left edge is the line itself, right edge is partUp / partDown. Top is fully dense, bottom is gone. A flat start then a steep drop keeps the crumbs packed against the line; a long shallow tail dissolves them out slowly.'],
+  ['@curve'],
+  ['partCore',   0,     200,   1,     'px how far either side of the line the crumbs are PACKED - the threshold is dropped locally so they swell until they touch. This is the only way to get high density at the line; lowering partThr globally raises the tail faster and just flattens the band'],
+  ['lineDissolve',0.00, 1.00,  0.01,  'makes the shimmer DISSOLVE INTO the particles instead of being a separate stroke over them - it is multiplied by the crumb field, so it exists only where paper exists and breaks up exactly where the paper does. 0 = the old continuous line, and partOverLine goes back to letting crumbs occlude it instead'],
+  ['partFloor',  0.00,  0.60,  0.005, 'proximity below which crumbs vanish OUTRIGHT instead of fading. Past the dense zone the survivors are sparse and half transparent, and that scatter reads as dirt on clean video - a clean end to the band beats a long dirty one. 0 restores the old faded tail'],
+  ['partCoreAmt',0.00,  1.00,  0.01,  'how hard they pack in that zone. 1 drops the local threshold to a tenth, so crumbs merge into near-solid paper. 0 removes it'],
+
+  ['PARTICLES - spread and randomness', 'How the band is distributed across its depth and along its length. Every constant here shows up as a stripe, which is why each one has a variation control next to it.'],
+  ['partClump',  0.00,  1.00,  0.01,  'how strongly crumbs gather into drifts. HIGH VALUES ARE THE PATCH CAUSE - near 1 the density swings hard in partClumpSc-sized blobs and reads as dirty patches rather than as gathering'],
+  ['partClumpSc',0.002, 0.080, 0.001, 'per px. Low = broad drifts, high = tight clusters'],
+  ['partReachVar',0.00, 1.00,  0.01,  'how uneven the band DEPTH is along the width. 0 = a stripe of constant thickness following the line, which is half of why it reads uniform'],
+  ['partReachSc',20,    900,   5,     'px wavelength of that unevenness. Low = the depth changes every few crumbs, high = long deep and shallow stretches'],
+
+  ['PARTICLES - drift and anchor', 'The idle life. The reference field holds 0.98 correlation at 0.5s and 0.78 at 4s, so this wants to be slow.'],
+  ['partDrift',  0.00,  1.20,  0.005, 'how fast each seed wanders in place. HIGH VALUES READ AS NOISE JITTER, not as material - the reference field holds 0.98 correlation at 0.5s and 0.78 at 4s, so this belongs near 0.1, not near 1'],
+  ['partWander', 0.00,  0.90,  0.01,  'how far a seed wanders, in cells. Large = crumbs sweep past each other and merge often'],
+  ['partAnchor', 0.00,  1.00,  0.01,  '0 = the field STAYS PUT and the edge sweeps through it. 1 = it rides the edge, which reads as the whole layer sliding up. Leave at 0'],
+
+  ['PARTICLES - colour, light and opacity', 'Reference paper is #DAD9CF. Keep partBright low and partLit high, that is what makes brightness a function of distance from the line instead of one flat tone.'],
+  ['paperR',     0.00,  1.00,  0.005, 'paper red. Reference #DAD9CF is 0.855'],
+  ['paperG',     0.00,  1.00,  0.005, 'paper green. Reference 0.851'],
+  ['paperB',     0.00,  1.00,  0.005, 'paper blue. Reference 0.812, the warmth is here. Lower is more yellow, higher is the reference warm grey'],
+  ['partBright', 0.00,  2.00,  0.01,  'base crumb brightness, away from the line. Keep this LOW so partLit does the work'],
+  ['partLit',    0.00,  2.00,  0.01,  'extra brightness by PROXIMITY to the line. This is what makes near crumbs bright and the far wake dim'],
+  ['partLitW',   0.10,  6.00,  0.05,  'falloff exponent for that lighting against proximity. 1 = linear, higher confines the brightening to crumbs right against the line'],
+  ['partOpacProx',0.00, 1.00,  0.01,  'how much crumb OPACITY follows distance to the line, on top of the count thinning out. 0 leaves a crumb at the far end of the wake as solid as one against the line'],
+  ['partOpac',   0.00,  1.00,  0.01,  'the crumbs OWN opacity. partLit only brightens them by proximity, this is what makes a crumb itself semi-transparent'],
+  ['partOpacVar',0.00,  1.00,  0.01,  'per-crumb variation of that opacity, keyed off the nearest seed, so some crumbs sit back'],
+  ['partGlow',   0.00,  1.50,  0.01,  'soft halo per crumb, taken from the field just below the threshold so it follows that crumb own opacity'],
+  ['partGlowW',  0.02,  0.95,  0.01,  'how far the halo reaches past the crumb edge. High = a broad bloom that bridges neighbouring crumbs'],
+  ['partOverLine',0.00, 1.00,  0.01,  'how much a crumb occludes the shimmer line underneath it. 0 = the line paints cleanly over every crumb, high = crumbs sit in front and break the rim up']
+];
+
+/* ============================================================== shader === */
+
+var VERT =
+  'attribute vec2 a_position;' +
+  'void main(){ gl_Position = vec4(a_position, 0.0, 1.0); }';
+
+var FRAG = `
+#extension GL_OES_standard_derivatives : enable
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform vec4 u_scene;   // resX, resY, time, base(px)
+uniform vec4 u_prog;    // p, alpha, grainRate, dither
+uniform vec4 u_line;    // lineW, lineBright, glowW, glowBright
+uniform vec4 u_thick;   // thickVar, thickFreq, thickSpeed, lineOff
+uniform vec4 u_ridge;   // amp, freq, drift, fine
+uniform vec4 u_sway;    // amp, freq, speed, warm
+uniform vec4 u_lead;    // amp, freq, evolve, cellJitter
+uniform vec4 u_jump;    // lagMax, rate, cellFreq, snap
+uniform vec4 u_part1;   // size, rad, thr, aa
+uniform vec4 u_part2;   // warp, warpScale, drift, wander
+uniform vec4 u_part3;   // reachUp, reachDown, densUp, densDown
+uniform vec4 u_part4;   // bright, lit, litW, anchor
+uniform vec4 u_part5;   // clump, clumpScale, tearAmp, tearScale
+uniform vec4 u_part6;   // paperR, paperG, paperB, edgeAA
+uniform vec4 u_part7;   // filmGrain, cellBlend, jumpClump, -
+uniform vec4 u_part8;   // partGlow, partGlowW, partOpac, partOpacVar
+uniform vec4 u_part9;   // creepTaper, sizeVar, reachVar, reachScale
+uniform vec4 u_part10;  // overLine, scatter, stretch, amount
+uniform vec4 u_part11;  // coreW, coreAmt, -, -
+uniform vec4 u_dev;     // devAmp, devScale, devAspect, devDrift
+uniform vec4 u_part12;  // opacProx, tintR, tintG, tintB
+uniform vec4 u_pers;    // lean, leanDist, trailStretch, anticipate
+uniform vec4 u_ab;      // abPx, glowBoost, abPow, -
+uniform vec4 u_p2;      // size2, amount2, -, -
+uniform sampler2D u_curve;  // density falloff, x = distance/reach
+
+#define RES  u_scene.xy
+#define TIME u_scene.z
+#define BASE u_scene.w
+#define PROG u_prog.x
+
+float hash11(float p){ p = fract(p*0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+
+float hash21(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+vec2 hash22(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.xx + p3.yz) * p3.zy);
+}
+
+// QUINTIC interpolation, not the usual cubic. Cubic value noise is only C1 —
+// its second derivative jumps at every lattice line, and on a large smooth
+// gradient that shows up as faint diamond-shaped creases. Quintic is C2 and
+// costs one extra multiply. This is a large part of why the dissolve reads as
+// smooth material rather than as noise.
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*f*(f*(f*6.0 - 15.0) + 10.0);
+  return mix(mix(hash21(i),           hash21(i+vec2(1,0)), u.x),
+             mix(hash21(i+vec2(0,1)), hash21(i+vec2(1,1)), u.x), u.y);
+}
+
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++){ v += a*noise(p); p = p*2.03 + vec2(17.0, 9.2); a *= 0.5; }
+  return v;
+}
+
+// The devour field. Deliberately NOT fbm(): in a standard fbm every octave
+// carries the same amplitude-to-wavelength ratio, so every octave contributes
+// equally to the gradient and the thresholded boundary comes out fractally
+// spiky — at devAmp/devScale near 3 that showed as thin vertical spears
+// shooting out of the band. Dropping persistence well below the lacunarity
+// (0.34 against 2.11) lets the base octave own the shape while the finer ones
+// only roughen it, which is what gives broad organic lobes that still have
+// detail on their edges.
+float devField(vec2 p){
+  float v = 0.0, a = 0.62;
+  for (int i = 0; i < 4; i++){
+    v += a*noise(p);
+    p = p*2.11 + vec2(7.3, 3.9);
+    a *= 0.34;
+  }
+  return v/0.927;
+}
+
+float grainHash(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+// How far one cell is running behind, at scroll position p.
+//
+// The sawtooth is the whole mechanism. It ramps up — that is the cell falling
+// steadily further behind — and then discharges over the last "snap" of its
+// cycle, which is the leap forward onto the cell in front. Being fract() of p
+// it is monotonic in scroll and therefore perfectly reversible.
+//
+// The phase is drawn partly from a noise that is SMOOTH in cell index, so
+// neighbouring cells sit at similar points in their cycle and wrap together.
+// Purely random per-cell phases would only ever move one cell at a time; the
+// reference moves ~8% of the width at once.
+float lagAt(float cell, float p, float clump, float rate, float snap){
+  float ph  = mix(hash11(cell*1.37 + 0.7), noise(vec2(cell*0.22, 3.7)), clump);
+  float saw = fract(p*rate + ph);
+  return saw - smoothstep(1.0 - snap, 1.0, saw);
+}
+
+void main(){
+  vec2  fc = gl_FragCoord.xy;
+  float x  = fc.x;
+  float t  = TIME;
+  float p  = PROG;
+
+  // ======================================================= the boundary ===
+
+  // --- the big silhouette. Its second fbm axis is time, so the shape morphs
+  //     in place instead of sliding past. Reference drift is near zero.
+  float rx = x * u_ridge.y / RES.x;
+  float rt = t * u_ridge.z;
+  float r1 = fbm(vec2(rx, rt)) - 0.5;
+  float r2 = fbm(vec2(rx*3.3 + 19.0, rt*0.7 + 7.0)) - 0.5;
+  float ridge = (r1*2.0 + r2*u_ridge.w) * u_ridge.x;
+
+  // --- the sway. Small and very slow — the whole point is that you should
+  //     not be able to catch it moving, only notice that it has moved.
+  float wx   = x * u_sway.y / RES.x;
+  float sway = (fbm(vec2(wx + 41.0, t*u_sway.z)) - 0.5) * 2.0 * u_sway.x;
+
+  // --- taper. Lead and lag must vanish at both ends: at p=0 nothing may
+  //     poke above the fold, and at p=1 every column has to be flush or a
+  //     lagging stretch leaves a permanent sliver of video at the top.
+  //
+  //     But a plain 4p(1-p) is only near 1 around p=0.5 and spends most of the
+  //     scroll near zero, which suppresses the differential exactly where you
+  //     are looking — that is what made the whole envelope read as one rigid
+  //     slab sliding up. Raising it to a FRACTIONAL power keeps it near 1
+  //     across the middle and still lands on exactly 0 at both ends, so
+  //     closure at p=1 is preserved for free (0^k is 0 for any k > 0).
+  float taper = pow(4.0 * p * (1.0 - p), max(u_part9.x, 0.05));
+
+  // --- lead / lag. The second noise axis is p, so the pattern of who is
+  //     ahead reshuffles as you scroll — a stretch that is leading now falls
+  //     behind later. That continuous reshaping is 'developing' rather than
+  //     'translating'; measured, the shape changes 0.39px per 1px travelled.
+  float lead = (fbm(vec2(x*u_lead.y/RES.x*4.0, p*u_lead.z)) - 0.5)
+               * 2.0 * u_lead.x * taper;
+
+  // --- the leap. One sawtooth per cell gives BOTH behaviours: the ramp is
+  //     the uneven creep, because neighbouring cells sit at different points
+  //     in their cycle, and the discharge is the leap forward onto the cell
+  //     ahead. fract() of p keeps it monotonic and perfectly reversible.
+  float cf = x * u_jump.z / RES.x;
+  cf += u_lead.w * (noise(vec2(cf*0.6, 11.0)) - 0.5);
+  float sn = clamp(u_jump.w, 0.02, 0.90);
+
+  // Cells must be BLENDED, not sampled with floor(). Taking one cell's lag per
+  // pixel gives every cell boundary a vertical cliff — a hard step where two
+  // neighbours happen to sit at different points in their cycle. Real material
+  // does not do that, and on screen it reads as the line being chopped into
+  // separate bars.
+  //
+  // So sample the two nearest cell CENTRES and blend across. cellBlend sets how
+  // much of the gap is spent transitioning: small keeps each patch flat with a
+  // quick shoulder between them, large makes the whole thing one continuous
+  // undulation with no patches left at all.
+  float gcen = cf - 0.5;
+  float ci   = floor(gcen);
+  float bw   = clamp(u_part7.y, 0.02, 0.5);
+  float wB   = smoothstep(0.5 - bw, 0.5 + bw, fract(gcen));
+  float lag  = u_jump.x * taper * mix(
+      lagAt(ci,       p, u_part7.z, u_jump.y, sn),
+      lagAt(ci + 1.0, p, u_part7.z, u_jump.y, sn), wB);
+
+  // --- fine raggedness. The fbm silhouette carries 450-1800px lobes; a torn
+  //     edge also has structure at a few pixels, and without it the boundary
+  //     under the crumbs is a smooth curve no amount of crumbs will disguise.
+  float ts   = max(u_part5.w, 1.0);
+  float tear = u_part5.z * (noise(vec2(x/ts, t*0.05))
+                          + 0.5*noise(vec2(x/ts*2.7 + 9.0, t*0.04)) - 0.75);
+
+  // ============================================================== devour ===
+  // The boundary is NOT a height field any more. y = edge(x) gives every
+  // column exactly one boundary, and a single-valued frontier can only ever
+  // read as a line sweeping upward however hard it wobbles — that is why no
+  // amount of ridge/sway/lead/lag tuning stopped it feeling like a layer
+  // moving up.
+  //
+  // Instead: a RESISTANCE field, static in screen space, thresholded by a
+  // front that rises with scroll. Nothing in the field ever moves; only the
+  // threshold does. Because resistance has local minima at many heights, the
+  // black opens as islands ahead of the main front, sends fingers up between
+  // them, and closes the holes behind. That is devouring rather than
+  // translating, and it is not reachable from a height field at all.
+  //
+  // devAmp is the whole character. At 0 the noise term vanishes, R is exactly
+  // fc.y - bias, and this reduces to the old sweeping line — so the slider
+  // runs continuously from the previous behaviour to full devouring. Islands
+  // detach once devAmp * |d(rn)/dy| exceeds 1, i.e. roughly once devAmp passes
+  // twice the field's vertical wavelength.
+  vec2  dq = vec2(x / max(u_dev.y, 8.0),
+                  fc.y / max(u_dev.y * u_dev.z, 8.0)) + u_dev.w * t;
+  float rn = devField(dq);
+
+  // The silhouette still biases the front, so ridge / sway / lead / lag / the
+  // leap all keep working exactly as tuned — they warp the front now instead
+  // of BEING the front.
+  float bias = ridge + sway + lead - lag + tear;
+  float R    = fc.y - bias + u_dev.x * (rn - 0.5);
+  float dR   = R - BASE;
+
+  // dl is dR corrected by the VERTICAL gradient only, and that distinction is
+  // the whole thing.
+  //
+  // Raw dR fails where the field flattens in y: dR/dy is 1 + devAmp*drn/dy,
+  // and at devAmp near twice the vertical wavelength that reaches zero, so R
+  // stops changing down a whole column and the entire vertical run sits inside
+  // the band - a streak of crumbs pouring downward.
+  //
+  // But dividing by the FULL gradient length(dFdx, dFdy) is worse: where the
+  // field is steep in x it shrinks dl and drags genuinely distant pixels into
+  // the band, which draws thin vertical spears instead. dFdx must not enter.
+  // The band is measured vertically, so only dFdy belongs here, clamped so
+  // neither a flat nor a near-vertical patch can run away.
+#ifdef GL_OES_standard_derivatives
+  float gy = clamp(abs(dFdy(R)), 0.45, 2.2);
+#else
+  float gy = 1.0;
+#endif
+  float dl = dR / gy;                // >0 not yet eaten, <0 devoured
+
+  // ================================================== the paper particles ===
+  // Beige torn-paper crumbs. They are the ONLY blend: they thin upward into
+  // the video and downward into the black, and nothing else softens the edge.
+  // No dissolve zone, no haze, no motes.
+  //
+  // The field is a SUM of per-seed kernels over the 3x3 neighbourhood, not a
+  // nearest-seed distance. Summing is what makes crumbs COMBINE: when two
+  // seeds wander close their kernels overlap, the sum clears the threshold in
+  // the gap between them, and the pair reads as one torn piece until they
+  // part again. A nearest-seed (Voronoi) field can never do that — every cell
+  // keeps its own wall no matter how close the seeds get.
+  //
+  // The lookup is then DOMAIN-WARPED before thresholding, and that is what
+  // makes the edges tear. The kernels are radial, so unwarped every crumb is
+  // a rounded blob; Voronoi would instead give dead-straight polygon walls,
+  // which reads as shattered glass. Paper tears fibrous, so the warp wants to
+  // be fine in scale and strong in amount.
+
+  // SCREEN SPACE, not boundary space. Anchoring the field to the moving edge
+  // tows the whole texture up the viewport as a rigid slab, and the effect
+  // reads as a layer sliding instead of the black enveloping. The frontier
+  // has to sweep THROUGH a field that stays where it is. partAnchor exists
+  // only so that is audible on a slider rather than asserted here.
+  // The band is a TRAIL, not a symmetric halo: below the line is the wake the
+  // shimmer has already passed through, above it is the gathering that runs
+  // ahead of it. partDown therefore reaches much further than partUp, and the
+  // crumbs are STRETCHED along the direction of travel — round crumbs read as
+  // scattered dust, vertically drawn-out ones read as something the line left
+  // behind. Dividing py compresses the field vertically, which elongates the
+  // crumbs on screen by the same factor.
+  float py  = mix(fc.y, fc.y - BASE, u_part4.w);
+  float psz = max(u_part1.x, 1.0);
+
+  // PERSONALITY. Without these the crumbs only emanate: one isotropic field
+  // sampled symmetrically either side of the boundary, so nothing about a
+  // crumb knows the line is travelling anywhere.
+  //
+  // LEAN - the field lookup is pulled toward the line, harder the further out
+  // you are, so crumbs read as leaning into it rather than sitting where they
+  // happened to fall. Shifting the LOOKUP rather than the crumbs themselves
+  // keeps it free: no extra samples, and the shapes stay intact instead of
+  // smearing the way a post-hoc displacement would.
+  float sideS = (dl >= 0.0) ? 1.0 : -1.0;
+  float lean  = u_pers.x * sideS * min(abs(dl)/max(u_pers.y, 1.0), 1.0);
+
+  // TRAIL - crumbs behind the front stretch along the direction it came from,
+  // so the wake streaks while the gathering ahead stays compact. Asymmetry is
+  // the whole point: equal treatment either side is what reads as emanation.
+  float strt  = max(u_part10.z, 0.05) * (dl < 0.0 ? (1.0 + max(u_pers.z, 0.0)) : 1.0);
+
+  vec2  pp  = vec2(x, (py + lean)/strt)/psz;
+
+  vec2  wq  = pp * u_part2.y;
+  pp += (vec2(noise(wq), noise(wq + 31.7)) - 0.5) * u_part2.x;
+
+  vec2  pi  = floor(pp), pf = fract(pp);
+  float rad = max(u_part1.y, 0.05);
+  float fld = 0.0;
+  // the nearest seed also stands in as a crumb IDENTITY. Crumbs are emergent
+  // here — a merged pair has no single owner — but the nearest seed is stable
+  // enough to hang per-crumb opacity variation on.
+  float nd = 1e9, nid = 0.0;
+  for (int j = -1; j <= 1; j++){
+    for (int i = -1; i <= 1; i++){
+      vec2  nb = vec2(float(i), float(j));
+      vec2  sd = hash22(pi + nb);
+      float ph = hash21(pi + nb + 5.1) * 6.28318;
+      // each seed on its own slow ellipse, wandering in place
+      vec2  o  = sd + u_part2.w * vec2(sin(t*u_part2.z + ph),
+                                       cos(t*u_part2.z*0.83 + ph*1.7));
+      // every seed gets its OWN radius. With one shared radius every crumb
+      // comes out the same size and the band reads as uniform pebbledash;
+      // varying it is what gives a spread of big and small torn pieces.
+      float rk = max(rad * mix(1.0 - u_part9.y, 1.0 + u_part9.y,
+                               hash21(pi + nb + 31.7)), 0.05);
+      // every seed also gets its own WEIGHT. One seed per cell at full
+      // strength is a regular lattice however hard the seeds wander — the
+      // spacing is still even on average, which is the last place uniformity
+      // hides. Weighting them down at random opens genuine voids and lets
+      // clusters happen, the way torn paper actually breaks up.
+      float wk = mix(1.0, hash21(pi + nb + 7.7), clamp(u_part10.y, 0.0, 1.0));
+      float d  = length(nb + o - pf);
+      if (d < nd){ nd = d; nid = hash21(pi + nb + 19.3); }
+      // NOT smoothstep(rk, 0.0, d) — reversed edges are undefined in GLSL ES
+      // and ANGLE is exactly where that would bite.
+      fld += wk * (1.0 - smoothstep(0.0, rk, d));
+    }
+  }
+
+  // The spatial envelope: 1 at the line, exactly 0 at partUp / partDown, so
+  // past the reach there are no crumbs at all — that is what keeps the black
+  // clean and the video untouched. partFall shapes it: 1 spreads them evenly
+  // across the band, higher packs them against the line and dissolves them
+  // away from it.
+  // ====================================== the particle envelope ===
+  // ONE quantity drives everything about a crumb - how many there are, how
+  // densely they pack, how opaque they are and how lit: how close it is to
+  // the shimmer line. That is the algorithm.
+  //
+  // The reach is a 2D FIELD, not a fixed distance per side. A fixed partUp /
+  // partDown lays a ribbon of even thickness above and below the boundary,
+  // which is exactly the uniform look; sampling a field in x AND y makes the
+  // band patchy - deep here, shallow there, ragged in between.
+  //
+  // The two sides read DIFFERENT fields, so a stretch trailing far behind
+  // does not also reach far ahead. Below is the WAKE the shimmer has passed
+  // through, above is the gathering running AHEAD of it, and which of the two
+  // is long varies along the boundary instead of being pinned by the two
+  // sliders alone.
+  float upR = max(u_part3.x, 1.0);
+  float dnR = max(u_part3.y, 1.0);
+  float rsc = max(u_part9.w, 8.0);
+  // Sampled ANISOTROPICALLY - it varies three times slower in y than in x.
+  // An isotropic field makes the reach change as fast going down through the
+  // band as it does along it, and that draws faint vertical streaks out of
+  // the boundary. The reach is a property of position ALONG the edge, so it
+  // should barely change across the band depth.
+  vec2  rq  = vec2(x/rsc, fc.y/(rsc*3.0));
+  float rnA = devField(rq + 31.7);   // ahead of the line
+  float rnW = devField(rq + 77.3);   // the wake behind it
+  float rv  = clamp(u_part9.z, 0.0, 1.0);
+  float rvn = (dl >= 0.0) ? rnA : rnW;
+  float rch = max(((dl >= 0.0) ? upR : dnR)
+                  * mix(1.0 - rv, 1.0 + rv, rvn), 1.0);
+
+  // PROXIMITY. 1 against the line, 0 at the reach, shaped by the panel curve.
+  float prox = texture2D(u_curve, vec2(clamp(abs(dl)/rch, 0.0, 1.0), 0.5)).r;
+
+  // clumping still says WHERE they gather, so they arrive in drifts
+  // devField, NOT a single noise() octave. One octave of value noise is
+  // lattice aligned, and at partClump near 1 that grid shows straight through
+  // as soft axis-aligned rectangles of density scattered across the band.
+  // Folding octaves breaks the alignment.
+  float pcl = devField(vec2(x, py)*u_part5.y + vec2(t*0.03, t*0.02));
+  float env = clamp(prox * mix(1.0, 0.25 + 1.7*pcl, u_part5.x), 0.0, 1.0);
+
+  // ANTICIPATION - a gathering just AHEAD of the front, denser than the plain
+  // falloff gives. Material piling up before it is taken, rather than the band
+  // being only debris left behind. Multiplied by prox so it cannot resurrect
+  // crumbs out past the reach.
+  if (dl > 0.0){
+    float ad = (abs(dl) - upR*0.18)/max(upR*0.16, 1.0);
+    env = clamp(env + u_pers.w * exp(-ad*ad) * prox, 0.0, 1.0);
+  }
+
+  // Kill the faint tail. Past the dense zone the crumbs that still clear the
+  // threshold are sparse AND half transparent, and a scatter of barely-there
+  // specks over clean video reads as dirt, not paper. Below this floor they
+  // vanish outright rather than fading out - a clean end to the band beats a
+  // long dirty one. Smoothstepped so nothing pops as the front advances.
+  env *= smoothstep(u_part11.z, u_part11.z + 0.10, prox);
+
+  float fd = fld * env;
+
+  // The smoothstep width tracks the field's own screen-space gradient, so the
+  // edge comes out exactly partAA PIXELS wide at any crumb size, density or
+  // warp setting. This is the whole reason it stops looking like pixels: a
+  // fixed threshold width is correct at one scale and quantises at every other.
+#ifdef GL_OES_standard_derivatives
+  float pw = max(fwidth(fd), 1e-4) * max(u_part1.w, 0.10) * 0.5;
+#else
+  float pw = 0.06 * max(u_part1.w, 0.10);
+#endif
+  // The per-side AMOUNT acts on the THRESHOLD, not on the field. Scaling the
+  // field by it looks equivalent and is not: the field's mean is only about
+  // 0.3*pi*rad^2, so a small amount drives the effective threshold hyperbolic
+  // and the slider goes dead below roughly 0.3 — which is exactly how
+  // partDensUp at 0.14 produced no crumbs above the line whatsoever. Mapping
+  // it into a bounded threshold band keeps the whole travel of the slider live.
+  float amt = clamp((dl >= 0.0) ? u_part3.z : u_part3.w, 0.0, 1.0);
+  // partAmount DIVIDES the threshold, so it is one global lever over how many
+  // crumbs there are - 2 is roughly twice as many, 0.5 is half. The two side
+  // amounts bias it above and below the line.
+  float thr = max(u_part1.z, 0.02) * mix(2.60, 0.80, amt)
+            / clamp(u_part10.w, 0.05, 4.0);
+
+  // PACK them against the line. This drops the threshold LOCALLY rather than
+  // laying a smooth band over the top. A smooth band is not particles - the
+  // ask is for particles so densely packed they read as almost solid, which
+  // means crumbs that swell until they touch, not a stripe of flat paper.
+  //
+  // Local is the whole point: the earlier finding still holds that lowering
+  // partThr globally raises the tail faster than the line and just flattens
+  // the band. Confined to partCore px either side, the tail never sees it.
+  //
+  // Its width rides the same unevenness as the reach so it does not read as a
+  // stripe ruled along the boundary.
+  float coreW = max(u_part11.x, 0.5) * mix(1.0, 0.35 + 1.30*rvn, u_part9.z);
+  float nearL = 1.0 - smoothstep(0.0, coreW, abs(dl));
+  thr *= mix(1.0, 0.10, nearL * clamp(u_part11.y, 0.0, 1.0));
+
+  // the env gate is insurance only: if partAA is wound far up, pw can exceed
+  // thr and leak coverage into a region that should have none.
+  float part = smoothstep(thr - pw, thr + pw, fd)
+             * smoothstep(0.0, 0.02, env);
+
+  // ================================================ second crumb layer ===
+  // Independent seeds at their own scale, unioned with the first.
+  //
+  // This is the ONLY way to genuinely add more crumbs once the first layer
+  // saturates. partAmount lowers a threshold, and past the point where the
+  // field already clears it nearly everywhere, lowering it further adds
+  // nothing at all - the coverage is capped by the field, not the threshold.
+  // A second seed population is new material.
+  //
+  // It shares the envelope, the lean and the trail stretch, so it belongs to
+  // the same band and the same motion; only its grid and amount are its own.
+  // Running it at a different partSize2 also mixes crumb sizes, which reads as
+  // more variety rather than simply more of the same thing.
+  float psz2 = max(u_p2.x, 1.0);
+  vec2  pp2  = vec2(x + 137.0, (py + lean)/strt)/psz2 + 53.7;
+  vec2  wq2  = pp2 * u_part2.y;
+  pp2 += (vec2(noise(wq2 + 5.5), noise(wq2 + 61.3)) - 0.5) * u_part2.x;
+  vec2  pi2  = floor(pp2), pf2 = fract(pp2);
+  float fld2 = 0.0;
+  for (int j = -1; j <= 1; j++){
+    for (int i = -1; i <= 1; i++){
+      vec2  nb = vec2(float(i), float(j));
+      vec2  sd = hash22(pi2 + nb + 9.1);
+      float ph = hash21(pi2 + nb + 23.7) * 6.28318;
+      vec2  o  = sd + u_part2.w * vec2(sin(t*u_part2.z + ph),
+                                       cos(t*u_part2.z*0.83 + ph*1.7));
+      float rk = max(rad * mix(1.0 - u_part9.y, 1.0 + u_part9.y,
+                               hash21(pi2 + nb + 41.3)), 0.05);
+      float wk = mix(1.0, hash21(pi2 + nb + 17.9), clamp(u_part10.y, 0.0, 1.0));
+      fld2 += wk * (1.0 - smoothstep(0.0, rk, length(nb + o - pf2)));
+    }
+  }
+  float fd2  = fld2 * env;
+  float thr2 = thr / clamp(u_p2.y, 0.05, 6.0);
+#ifdef GL_OES_standard_derivatives
+  float pw2 = max(fwidth(fd2), 1e-4) * max(u_part1.w, 0.10) * 0.5;
+#else
+  float pw2 = 0.06 * max(u_part1.w, 0.10);
+#endif
+  part = max(part, smoothstep(thr2 - pw2, thr2 + pw2, fd2)
+                 * smoothstep(0.0, 0.02, env));
+
+
+  // ====================================================== the white line ===
+  // Thickness varies strongly along the length — the reference line is thick
+  // in places and nearly gone in others, and an even one reads as a stroke
+  // rather than as a shimmer.
+  float tv = 0.28 + u_thick.x * noise(vec2(x*u_thick.y/RES.x, t*u_thick.z + 41.0));
+  float w  = max(u_line.x * tv, 0.35);
+  float dc = dl - u_thick.w;               // offset to the light side
+  float gw   = max(u_line.z, 1.0);
+
+  // CHROMATIC ABERRATION, on the line and nowhere else. The three channels are
+  // drawn at slightly different offsets, so the line itself fringes - warm on
+  // one edge, cool on the other. Nothing outside the line width is touched.
+  //
+  // That is the difference from every earlier attempt: those spread a wide
+  // field across the crumb band and gated it, which is why they came out as
+  // patches. This is bounded by w and gw, so it can only ever live on the line.
+  //
+  // Keyed to tv, the line own thickness, through a pow - exponential, so the
+  // fringe and the glow boost appear only where it genuinely fattens and are
+  // absent everywhere else without needing a threshold.
+  float tN   = clamp((tv - 0.28)/max(u_thick.x, 0.01), 0.0, 1.0);
+  float tE   = pow(tN, max(u_ab.z, 0.05));
+  float abp  = u_ab.x * tE;
+  vec3  dcC  = vec3(dc + abp, dc, dc - abp);
+  vec3  core = exp(-dcC*dcC/(w*w)) * u_line.y;
+  vec3  glow = exp(-dcC*dcC/(gw*gw)) * u_line.w * (1.0 + u_ab.y*tE);
+
+  // ============================================================ composite ===
+  // Measured off assets/video/hero.mp4: the TV's core clips to pure white,
+  // but the light it throws - the top 5% of pixels, averaged over 10 frames -
+  // is #B6A68D, normalised (1.000, 0.912, 0.772). Warmer than the 0.955/0.885
+  // this used to assume.
+  vec3 tint  = mix(vec3(1.0), vec3(u_part12.y, u_part12.z, u_part12.w), u_sway.w);
+  vec3 paper = vec3(u_part6.x, u_part6.y, u_part6.z);
+
+  // The black: a hard, anti-aliased edge. edgeAA is ANTI-ALIASING, not a
+  // blend zone — a pixel either side of it and the black is fully opaque.
+  // Everything that softens this boundary is crumbs sitting on top of it.
+  float maskA = clamp(0.5 - dl/max(u_part6.w, 0.30), 0.0, 1.0);
+
+  // Crumbs catch the line's light, which is what gives the bright rim right
+  // at the tear while the far ones stay flat beige.
+  vec3  pcol = paper * (u_part4.x + u_part4.y*pow(prox, max(u_part4.z, 0.05)));
+
+  // Premultiplied: rgb carries colour*coverage and alpha carries coverage, so
+  // a crumb is opaque paper wherever it covers and the video shows through
+  // untouched wherever it does not.
+  //   below, no crumb -> rgb 0, a 1  -> pure black
+  //   below, a crumb  -> beige on black
+  //   above, no crumb -> a 0         -> video untouched
+  //   above, a crumb  -> beige over the video
+  // Crumbs carry their OWN opacity, independent of the line. partLit only
+  // brightens them by proximity; without this there is no way to make a crumb
+  // itself semi-transparent. partOpacVar gives each one its own value off the
+  // nearest seed, so some sit back and they stop reading as one flat sheet.
+  // Per-crumb opacity variation applies to the CRUMBS, and partOpacVar of 1
+  // means opk averages 0.5 - every crumb half transparent, which is why the
+  // band never read as dense however hard the count was pushed.
+  // OPACITY follows proximity too, not just the count. Without this a crumb
+  // at the far end of the wake is as solid as one against the line, and the
+  // band stops on an edge of full-strength paper instead of fading out.
+  float opk = clamp(u_part8.z * (1.0 - u_part8.w*nid), 0.0, 1.0)
+            * mix(1.0, prox, clamp(u_part12.x, 0.0, 1.0));
+  float op  = part * opk;
+
+  float a   = maskA + op*(1.0 - maskA);
+  vec3  rgb = pcol * op;
+
+  // A soft halo hugging each crumb, taken from the SAME field just below the
+  // threshold — so it follows that crumb's own resolution: a half-formed crumb
+  // glows faintly, a solid one fully. Additive, so it lifts rgb without
+  // raising alpha and reads as paper catching light, not as a fatter crumb.
+  float halo = smoothstep(thr*(1.0 - clamp(u_part8.y, 0.02, 0.95)), thr, fd);
+  rgb += paper * halo * u_part8.x * opk;
+
+  // The line stays ADDITIVE — it raises rgb without raising alpha, which
+  // under premultiplied blending is a true add over the video rather than a
+  // lerp toward white that would flatten it.
+  //
+  // But it is attenuated where a crumb covers it, so crumbs sit IN FRONT of
+  // the line instead of the line painting cleanly over the top of them. That
+  // is what breaks the rim up and lets the band overlap it — and it is also
+  // how the reference rim gets to be thick in places and nearly gone in
+  // others without the thickness slider doing all the work.
+  // Occlusion is driven by the CRUMBS only, never by the solid core. If the
+  // core occluded the line too, then turning it up would bury the shimmer
+  // under a band of flat paper - the core is meant to sit under the tear, not
+  // in front of it.
+  // The shimmer is NOT a separate stroke laid over the band. lineDissolve
+  // multiplies it by the crumb field itself, so it exists only where paper
+  // exists and breaks up exactly where the paper does - the same material,
+  // lit, rather than a line floating on top of it.
+  //
+  // At 0 it is the old continuous stroke and partOverLine does its old job of
+  // letting crumbs occlude it. Those two are opposite ideas - occluded BY the
+  // crumbs versus made OF them - so the occlusion fades out as the dissolve
+  // comes in, and they can never both be half-applied at once.
+  float lDis = clamp(u_part11.w, 0.0, 1.0);
+  float lm   = mix(1.0, part, lDis)
+             * (1.0 - part*opk*clamp(u_part10.x, 0.0, 1.0)*(1.0 - lDis));
+  rgb += tint * (core + glow) * lm;
+
+  // GLARE. A wide soft bloom, but only where the line actually piles up - it
+  // is gated on tv, the line's own thickness term, so it blooms at the thick
+  // bright stretches and is absent where the shimmer thins to nothing. An
+  // ungated bloom is just a haze along the whole edge, which is the thing that
+  // was explicitly rejected. Additive like the rest of the line, so it lifts
+  // the video rather than painting over it, and it is NOT occluded by crumbs:
+  // glare is light in the air, it does not sit behind paper.
+  // The gate reads the thickness at a QUARTER of thickLobes, not at tv itself.
+  // thickLobes is tuned for a 4px stroke - at that wavelength (38px across a
+  // 760px frame at 20 lobes) a bloom 2*glareW tall changes gate value faster
+  // than it is tall, and every step stamps a soft RECTANGLE along the edge.
+  // Slowing the gate makes its features wider than the bloom is tall. devField
+  // rather than noise() for the same reason: one octave is lattice aligned.
+  // Gate on the FIELD directly, in 0..1, not on the derived thickness. tv is
+  // 0.28 + thickVar*noise, so any absolute threshold silently depends on
+  // thickVar - and devField folds octaves, so it clusters near its mean and
+  // rarely reaches the 1.0 a raw noise() gate was calibrated against. Setting
+  // it in field units means glareThick reads as "the top (1 - x) of the
+  // thickness range" whatever thickVar is doing.
+
+
+
+  float gt = floor(t * u_prog.z);
+  // Grain and dither belong to the crumb band ONLY. Gating them by distance
+  // is what leaves the solid black mathematically untouched — turning the
+  // sliders down cannot do it, because the band wants them and the black
+  // must not have them.
+  float band = 1.0 - smoothstep(0.0, max(upR, dnR), abs(dl));
+  rgb += (grainHash(fc + gt) - 0.5) * u_part7.x * band;
+
+  // Dither the ALPHA as well. The dissolve is a long ramp across near-black,
+  // exactly where 8-bit output bands into contours, and grain on rgb cannot
+  // fix a stepped alpha.
+  a = clamp(a + (grainHash(fc + gt + 7.7) - 0.5) * u_prog.w * band, 0.0, 1.0);
+
+  gl_FragColor = vec4(max(rgb, vec3(0.0)), a) * u_prog.y;
+}
+`;
+
+/* ================================================================== gl === */
+
+var cv    = document.getElementById('env');
+var hero  = document.getElementById('hero');
+var comp  = document.getElementById('comp');
+var vigEl = document.getElementById('vig');
+var gl    = cv.getContext('webgl', { alpha:true, antialias:false, depth:false });
+
+var live = { p:0, edge:0, heroY:0, fps:0, w:0, h:0, t:0, alpha:1 };
+
+/* The falloff curve, as a lookup table. The bezier is marched in t and
+   resampled onto uniform x, which sidesteps solving x->t entirely — the
+   curve is only rebuilt when a handle moves, so brute force is free here. */
+var CURVE_N  = 256;
+var curveTex = null;
+var curveBuf = new Uint8Array(CURVE_N);
+var curveRedraw = null;
+
+function curveAt(t){
+  var m = 1 - t;
+  return [3*m*m*t*P.curveX1 + 3*m*t*t*P.curveX2 + t*t*t,
+          m*m*m + 3*m*m*t*P.curveY1 + 3*m*t*t*P.curveY2];
+}
+function uploadCurve(){
+  var N = 1024, xs = new Float32Array(N+1), ys = new Float32Array(N+1), i;
+  for (i = 0; i <= N; i++){ var b = curveAt(i/N); xs[i] = b[0]; ys[i] = b[1]; }
+  var j = 0;
+  for (var k = 0; k < CURVE_N; k++){
+    var x = k/(CURVE_N-1);
+    while (j < N-1 && xs[j+1] < x) j++;
+    var span = xs[j+1] - xs[j];
+    var f = span > 1e-9 ? (x - xs[j])/span : 0;
+    var y = ys[j] + (ys[j+1] - ys[j])*f;
+    curveBuf[k] = Math.max(0, Math.min(255, Math.round(y*255)));
+  }
+  if (!curveTex || !gl) return;
+  gl.bindTexture(gl.TEXTURE_2D, curveTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, CURVE_N, 1, 0,
+                gl.LUMINANCE, gl.UNSIGNED_BYTE, curveBuf);
+}
+
+function smootherstep(x){ return x*x*x*(x*(x*6-15)+10); }
+
+function buildVig(){
+  var stops = [];
+  for (var i = 0; i <= 24; i++){
+    var x = i/24;
+    stops.push('rgba(0,0,0,' + (smootherstep(x)*P.vigDepth).toFixed(4) +
+               ') ' + (x*100).toFixed(1) + '%');
+  }
+  vigEl.style.background = 'linear-gradient(to bottom,' + stops.join(',') + ')';
+}
+
+function applyCss(){
+  var r = document.documentElement.style;
+  r.setProperty('--comp-h',  P.compH + 'vh');
+  r.setProperty('--media-z', P.mediaZoom);
+  r.setProperty('--vig-top', P.vigTop + 'vh');
+  r.setProperty('--env',     P.env);
+  r.setProperty('--fade',    P.fadeLen);
+  buildVig();
+}
+
+function compile(type, src, label){
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    console.error('[line] ' + label + ':', gl.getShaderInfoLog(s));
+  return s;
+}
+
+if (!gl){
+  console.error('[line] no webgl');
+  document.getElementById('hint').textContent = 'WebGL unavailable';
+  applyCss();
+} else {
+  applyCss();
+  boot();
+}
+
+function boot(){
+  // fwidth() in the particle threshold needs this. Without it the shader still
+  // compiles — the #ifdef falls back to a fixed width — but crumb edges stop
+  // being a constant number of pixels wide once you move partSize.
+  var deriv = gl.getExtension('OES_standard_derivatives');
+  if (!deriv) console.warn('[line] no OES_standard_derivatives — crumb AA is approximate');
+
+  var prog = gl.createProgram();
+  var vs = compile(gl.VERTEX_SHADER, VERT, 'vert');
+  var fs = compile(gl.FRAGMENT_SHADER, FRAG, 'frag');
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.bindAttribLocation(prog, 0, 'a_position');
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS))
+    console.error('[line] link:', gl.getProgramInfoLog(prog));
+  gl.deleteShader(vs); gl.deleteShader(fs);
+  gl.useProgram(prog);
+
+  var buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+  var U = {};
+  ['scene','prog','line','thick','ridge','sway','lead','jump',
+   'part1','part2','part3','part4','part5','part6','part7','part8','part9','part10','part11','dev','part12','pers','ab','p2']
+    .forEach(function(n){ U[n] = gl.getUniformLocation(prog, 'u_' + n); });
+
+  // The falloff curve lives in a 256x1 LUMINANCE texture rather than being
+  // solved per pixel. Newton-solving a bezier for y-of-x in the fragment
+  // shader would cost ~50 ops on every one of several million pixels, to
+  // evaluate something that only changes when a handle is dragged.
+  curveTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, curveTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.uniform1i(gl.getUniformLocation(prog, 'u_curve'), 0);
+  uploadCurve();
+
+  var pxScale = 1, start = performance.now(), raf = 0;
+  // Smooth scroll. smoothY chases window.scrollY instead of the shader reading
+  // it raw, so the envelope eases rather than tracking the wheel one-to-one.
+  //
+  // Damped frame-rate INDEPENDENTLY: a flat per-frame lerp of 0.24 settles
+  // twice as fast on a 120Hz display as on 60Hz, so the feel would change with
+  // the monitor. 1 - (1-k)^(dt*60) gives the same settling time everywhere.
+  //
+  // This does not break the no-accumulated-state rule: the shape is still a
+  // pure function of p, and p is still a pure function of smoothY. Only the
+  // POSITION lags - scrolling back up retraces the identical silhouette.
+  var smoothY = null, lastT = 0;
+  var fcount = 0, ftime = start, heroOff = false;
+
+  function resize(){
+    var cssW = cv.clientWidth  || window.innerWidth;
+    var cssH = cv.clientHeight || window.innerHeight;
+    var dpr  = Math.min(window.devicePixelRatio || 1, 2);
+    var rw = Math.max(1, Math.round(cssW*dpr));
+    var rh = Math.max(1, Math.round(cssH*dpr));
+    var k  = Math.min(1, Math.sqrt(P.pxBudget*1e6 / Math.max(1, rw*rh)));
+    var w  = Math.max(1, Math.round(rw*k));
+    var h  = Math.max(1, Math.round(rh*k));
+    if (cv.width !== w || cv.height !== h){
+      cv.width = w; cv.height = h;
+      gl.viewport(0, 0, w, h);
+    }
+    pxScale = w/Math.max(cssW, 1);
+  }
+
+  function draw(now){
+    resize();
+    var s  = pxScale;
+    var vh = window.innerHeight;
+
+    // Scroll is read here rather than in a listener, so it lands on the same
+    // frame as the render — scrubbed, and fully reversible.
+    if (smoothY === null) smoothY = window.scrollY;
+    var dt = lastT ? Math.min((now - lastT)/1000, 0.1) : 1/60;
+    lastT  = now;
+    var sk = P.smoothScroll >= 1 ? 1
+           : 1 - Math.pow(1 - Math.max(P.smoothScroll, 0.001), dt*60);
+    smoothY += (window.scrollY - smoothY) * sk;
+
+    var span = Math.max(1, P.env*vh);
+    var raw  = scrubOn ? scrubP : Math.min(1, Math.max(0, smoothY/span));
+    var p    = Math.pow(raw, P.ease);
+
+    // Travel. The margins have to clear the WHOLE construction, not just the
+    // line: the crumbs reach partDown below it and partUp above, the
+    // silhouette is ragged by tearAmp, and a stretch can run leadAmp ahead or
+    // lagMax behind. The lead/lag terms used to be left out because the old
+    // taper had squashed them to nothing by the time p reached either end;
+    // with creepTaper holding them alive much closer to the ends they have to
+    // be carried in the margins or a lagging stretch shows a sliver near p=1.
+    // devAmp warps the front by +/- half its value, so the sweep has to clear
+    // that too or the last islands never close at p=1.
+    var creep = (P.leadAmp + P.lagMax)*0.6 + P.devAmp*0.5;
+    var below = (P.slackBot + P.ridgeAmp + P.tearAmp + P.partDown + creep)*s;
+    var above = (P.slackTop + P.ridgeAmp + P.tearAmp + P.partUp  + creep)*s;
+    var base  = -below + (cv.height + above + below)*p;
+
+    var t = frozen ? freezeT : ((now - start)/1000) % 1200;
+
+    var alpha = 1;
+    if (raw >= 1 && P.fadeLen > 0)
+      alpha = 1 - Math.min(1, Math.max(0, (smoothY - span)/(P.fadeLen*vh)));
+
+    var off = (raw >= 1);
+    if (off !== heroOff){ heroOff = off; hero.setAttribute('data-off', off ? '1' : '0'); }
+
+    comp.style.setProperty('--hero-y', (smoothY*P.heroPar).toFixed(2) + 'px');
+
+    gl.uniform4f(U.scene, cv.width, cv.height, t, base);
+    gl.uniform4f(U.prog,  p, alpha, P.grainRate, P.dither);
+    gl.uniform4f(U.line,  P.lineW*s, P.lineBright, P.glowW*s, P.glowBright);
+    gl.uniform4f(U.thick, P.thickVar, P.thickLobes, P.thickSpeed, P.lineOff*s);
+    gl.uniform4f(U.ridge, P.ridgeAmp*s, P.ridgeLobes, P.ridgeDrift, P.ridgeFine);
+    gl.uniform4f(U.sway,  P.swayAmp*s, P.swayLobes, P.swaySpeed, P.warm);
+    gl.uniform4f(U.lead,  P.leadAmp*s, P.leadLobes, P.leadEvolve, P.cellJitter);
+    gl.uniform4f(U.jump,  P.lagMax*s, P.jumpRate, P.jumpCells, P.jumpSnap);
+    // Everything measured in px scales by the device ratio so a crumb is the
+    // same physical size on a retina display; partAA is already in real device
+    // pixels via fwidth, so it must NOT be scaled. partClumpSc is per px, so
+    // it divides rather than multiplies.
+    gl.uniform4f(U.part1, P.partSize*s, P.partRad, P.partThr, P.partAA);
+    gl.uniform4f(U.part2, P.partWarp, P.partWarpSc, P.partDrift, P.partWander);
+    gl.uniform4f(U.part3, P.partUp*s, P.partDown*s, P.partDensUp, P.partDensDn);
+    gl.uniform4f(U.part4, P.partBright, P.partLit, P.partLitW, P.partAnchor);
+    gl.uniform4f(U.part5, P.partClump, P.partClumpSc/s, P.tearAmp*s, P.tearScale*s);
+    gl.uniform4f(U.part6, P.paperR, P.paperG, P.paperB, P.edgeAA*s);
+    gl.uniform4f(U.part7, P.filmGrain, P.cellBlend, P.jumpClump, 0);
+    gl.uniform4f(U.part8, P.partGlow, P.partGlowW, P.partOpac, P.partOpacVar);
+    gl.uniform4f(U.part9, P.creepTaper, P.partSizeVar, P.partReachVar, P.partReachSc*s);
+    gl.uniform4f(U.part10, P.partOverLine, P.partScatter, P.partStretch, P.partAmount);
+    gl.uniform4f(U.part11, P.partCore*s, P.partCoreAmt, P.partFloor, P.lineDissolve);
+    gl.uniform4f(U.dev,   P.devAmp*s, P.devScale*s, P.devAspect, P.devDrift);
+    gl.uniform4f(U.part12, P.partOpacProx, P.tintR, P.tintG, P.tintB);
+    gl.uniform4f(U.pers,   P.persLean*s, P.persLeanD*s, P.persTrail, P.persAnticip);
+    gl.uniform4f(U.ab,     P.abAmt*s, P.abBoost, P.abPow, 0);
+    gl.uniform4f(U.p2,     P.partSize2*s, P.partAmount2, 0, 0);
+
+    gl.clearColor(0,0,0,0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    fcount++;
+    if (now - ftime > 500){ live.fps = fcount*1000/(now - ftime); fcount = 0; ftime = now; }
+    live.p = raw; live.t = t; live.edge = base/s; live.alpha = alpha;
+    live.heroY = smoothY*P.heroPar;
+    live.w = cv.width; live.h = cv.height;
+    if (panelOpen) paintRead();
+
+    raf = requestAnimationFrame(draw);
+  }
+
+  raf = requestAnimationFrame(draw);
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible'){ if (!raf) raf = requestAnimationFrame(draw); }
+    else if (raf){ cancelAnimationFrame(raf); raf = 0; }
+  });
+  window.addEventListener('resize', resize);
+}
+
+/* =============================================================== panel === */
+
+var panel  = document.getElementById('panel');
+var host   = document.getElementById('sliders');
+var out    = document.getElementById('out');
+var readEl = document.getElementById('read');
+
+var panelOpen = false;
+var scrubOn = false, scrubP = 0;
+var frozen  = false, freezeT = 0;
+var rows = {};
+
+var STORE = 'cnvrt.line.v2';   // v1 held the old dissolve/mote params
+
+function load(){
+  try {
+    var j = JSON.parse(localStorage.getItem(STORE) || '{}');
+    for (var k in j) if (k in P && typeof j[k] === 'number') P[k] = j[k];
+  } catch (e) {}
+}
+function save(){
+  try { localStorage.setItem(STORE, JSON.stringify(P)); } catch (e) {}
+}
+
+function paintRead(){
+  readEl.innerHTML =
+    '<span>p</span> <b>' + live.p.toFixed(3) + '</b>' +
+    ' &nbsp; <span>alpha</span> <b>' + live.alpha.toFixed(2) + '</b>' +
+    ' &nbsp; <span>t</span> <b>' + live.t.toFixed(1) + 's</b><br>' +
+    '<span>edge</span> <b>' + Math.round(live.edge) + 'px</b>' +
+    ' &nbsp; <span>hero</span> <b>' + Math.round(live.heroY) + 'px</b><br>' +
+    '<span>render</span> <b>' + live.w + '×' + live.h + '</b>' +
+    ' &nbsp; <span>fps</span> <b>' + live.fps.toFixed(0) + '</b>';
+}
+
+/* The falloff curve editor. Endpoints are pinned — (0,1) is the shimmer line
+   at full density, (1,0) is the reach at nothing — so only the two handles
+   move, exactly like a CSS cubic-bezier. */
+function buildCurve(){
+  var wrap = document.createElement('div');
+  wrap.className = 'curvewrap';
+  wrap.innerHTML = '<canvas></canvas><div class="curvelab">' +
+    '<span>at the line</span><span>dissolved</span></div>';
+  var cv = wrap.querySelector('canvas'), ctx = cv.getContext('2d');
+  var PAD = 10, HT = 150, grab = 0;
+
+  function fit(){
+    var d = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.round((cv.clientWidth || 300)*d), h = Math.round(HT*d);
+    if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+    return d;
+  }
+  function draw(){
+    var d = fit(), W = cv.width, H = cv.height, pd = PAD*d;
+    var X = function(u){ return pd + u*(W - 2*pd); };
+    var Y = function(v){ return H - pd - v*(H - 2*pd); };
+    ctx.clearRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(255,255,255,.07)'; ctx.lineWidth = d;
+    for (var i = 0; i <= 4; i++){
+      ctx.beginPath(); ctx.moveTo(X(i/4), Y(0)); ctx.lineTo(X(i/4), Y(1)); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(X(0), Y(i/4)); ctx.lineTo(X(1), Y(i/4)); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.20)';
+    ctx.beginPath(); ctx.moveTo(X(0), Y(1)); ctx.lineTo(X(P.curveX1), Y(P.curveY1)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(X(1), Y(0)); ctx.lineTo(X(P.curveX2), Y(P.curveY2)); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,246,228,.92)'; ctx.lineWidth = 1.6*d;
+    ctx.beginPath();
+    for (var k = 0; k <= 96; k++){
+      var b = curveAt(k/96);
+      if (k) ctx.lineTo(X(b[0]), Y(b[1])); else ctx.moveTo(X(b[0]), Y(b[1]));
+    }
+    ctx.stroke();
+    var hs = [[P.curveX1, P.curveY1], [P.curveX2, P.curveY2]];
+    for (var q = 0; q < 2; q++){
+      ctx.fillStyle = (grab === q+1) ? '#fff' : 'rgba(255,246,228,.78)';
+      ctx.beginPath(); ctx.arc(X(hs[q][0]), Y(hs[q][1]), 4.5*d, 0, 6.28318); ctx.fill();
+    }
+  }
+  function pick(e){
+    var r = cv.getBoundingClientRect();
+    return [(e.clientX - r.left - PAD)/Math.max(1, r.width - 2*PAD),
+            (r.height - PAD - (e.clientY - r.top))/Math.max(1, r.height - 2*PAD)];
+  }
+  function move(e){
+    if (!grab) return;
+    var p = pick(e);
+    var x = Math.max(0, Math.min(1, p[0])), y = Math.max(0, Math.min(1, p[1]));
+    if (grab === 1){ P.curveX1 = x; P.curveY1 = y; } else { P.curveX2 = x; P.curveY2 = y; }
+    draw(); uploadCurve(); save();
+    e.preventDefault();
+  }
+  cv.addEventListener('pointerdown', function(e){
+    var p = pick(e);
+    var d1 = Math.pow(p[0]-P.curveX1, 2) + Math.pow(p[1]-P.curveY1, 2);
+    var d2 = Math.pow(p[0]-P.curveX2, 2) + Math.pow(p[1]-P.curveY2, 2);
+    grab = d1 <= d2 ? 1 : 2;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    move(e);
+  });
+  cv.addEventListener('pointermove', move);
+  cv.addEventListener('pointerup',     function(){ grab = 0; draw(); });
+  cv.addEventListener('pointercancel', function(){ grab = 0; draw(); });
+
+  // the panel is hidden at build time, so clientWidth is 0 until it opens
+  curveRedraw = function(){ draw(); uploadCurve(); };
+  rows.__curve = curveRedraw;
+  draw();
+  return wrap;
+}
+
+function buildPanel(){
+  var tools = document.createElement('div');
+  tools.innerHTML =
+    '<div class="grp">harness</div>' +
+    '<div class="chk"><input type="checkbox" id="cScrub">' +
+      '<label for="cScrub">scrub p by hand (ignore scroll)</label></div>' +
+    '<div class="row"><label title="drive the line from here instead of the scrollbar">p</label>' +
+      '<input type="range" id="rScrub" min="0" max="1" step="0.001" value="0">' +
+      '<output id="oScrub">0.000</output></div>' +
+    '<div class="chk"><input type="checkbox" id="cFreeze">' +
+      '<label for="cFreeze">freeze time (kill the idle animation)</label></div>' +
+    '<div class="chk"><input type="checkbox" id="cMarks" checked>' +
+      '<label for="cMarks">show section markers</label></div>';
+  host.appendChild(tools);
+
+  document.getElementById('cScrub').addEventListener('change', function(){ scrubOn = this.checked; });
+  var rS = document.getElementById('rScrub'), oS = document.getElementById('oScrub');
+  rS.addEventListener('input', function(){ scrubP = parseFloat(rS.value); oS.textContent = scrubP.toFixed(3); });
+  document.getElementById('cFreeze').addEventListener('change', function(){
+    frozen = this.checked; if (frozen) freezeT = live.t;
+  });
+  document.getElementById('cMarks').addEventListener('change', function(){
+    document.body.setAttribute('data-marks', this.checked ? '1' : '0');
+  });
+
+  SPEC.forEach(function(sp){
+    if (sp[0] === '@curve'){ host.appendChild(buildCurve()); return; }
+    if (sp.length <= 2){
+      var g = document.createElement('div');
+      g.className = 'grp';
+      g.innerHTML = sp[0] + (sp[1] ? '<small>' + sp[1] + '</small>' : '');
+      host.appendChild(g);
+      return;
+    }
+    var key = sp[0], min = sp[1], max = sp[2], step = sp[3], tip = sp[4] || '';
+    var dp = (String(step).split('.')[1] || '').length;
+
+    var el = document.createElement('div');
+    el.className = 'row';
+    el.innerHTML =
+      '<label title="' + tip.replace(/"/g,'&quot;') + '">' + key + '</label>' +
+      '<input type="range" min="' + min + '" max="' + max + '" step="' + step +
+        '" value="' + P[key] + '">' +
+      '<output>' + P[key].toFixed(dp) + '</output>';
+
+    var input = el.querySelector('input'), val = el.querySelector('output');
+    function sync(){
+      input.value = P[key];
+      val.textContent = P[key].toFixed(dp);
+      el.classList.toggle('dirty', P[key] !== DEFAULTS[key]);
+    }
+    input.addEventListener('input', function(){
+      P[key] = parseFloat(input.value); sync(); applyCss(); save();
+    });
+    rows[key] = sync;
+    sync();
+    host.appendChild(el);
+  });
+}
+
+document.getElementById('copy').addEventListener('click', function(){
+  var lines = Object.keys(DEFAULTS).map(function(k){ return '  ' + k + ': ' + P[k]; });
+  out.value = 'var P = {\n' + lines.join(',\n') + '\n};';
+  out.select();
+  try { document.execCommand('copy'); } catch (e) {}
+});
+
+document.getElementById('reset').addEventListener('click', function(){
+  for (var k in DEFAULTS) P[k] = DEFAULTS[k];
+  for (var r in rows) rows[r]();
+  applyCss(); save();
+});
+
+addEventListener('keydown', function(e){
+  if (/^(INPUT|TEXTAREA)$/.test((e.target||{}).tagName||'')) return;
+  if (e.key === '`'){
+    panelOpen = panel.hidden;
+    panel.hidden = !panel.hidden;
+    if (panelOpen){ paintRead(); if (curveRedraw) curveRedraw(); }
+  }
+});
+
+load();
+buildPanel();
+applyCss();
+uploadCurve();   // load() may have restored handles that boot() never saw
+</script>
+</body>
+</html>

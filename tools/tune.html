@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>glass tune bounce</title>
+<!-- A BOUNCE PAGE, for looking at parameter sets without editing index.html.
+
+     The glass panel persists P to localStorage and the loader lets a saved
+     value beat a new default, which is normally the thing that bites you (see
+     GLASS.md). Here it is the lever: this page is served from the same origin
+     as the site, so it can write that key and then hand over to index.html,
+     which comes up with those numbers already in P.
+
+         /_s/tune.html?p={"absorb":0.6,"filmO":0.45}       DEFAULTS + these
+         /_s/tune.html?reset=1                             clear the key
+         /_s/tune.html?p={...}&y=10300                     and park the scroll
+
+     `p` REPLACES the stored set rather than merging into it, which is what
+     makes a sweep honest: every variant is DEFAULTS plus exactly the numbers
+     it names, and variant 3 cannot be quietly carrying variant 2's. Anything
+     not named keeps whatever DEFAULTS says. `y` is stashed for the shot script
+     to pick up rather than applied here, because the scroll has to happen
+     after the drivers have measured.
+
+     Nothing on the site loads this file. It exists for tools/shot.js. -->
+<body style="background:#141414">
+<script>
+(async function () {
+  /* THE KEY IS READ OUT OF THE SITE, not copied here. It was copied here, and
+     the moment index.html bumped v4 -> v5 this page went on writing v4 while
+     the module read v5 — so every variant in a sweep came back IDENTICAL,
+     which looks exactly like "the parameter does nothing" and cost a round of
+     chasing the wrong thing. One statement of the number, fetched. */
+  var KEY = 'cnvrt.offglass.v4';
+  try {
+    var src = await (await fetch('/index.html')).text();
+    var m = /var KEY = '(cnvrt\.offglass\.[^']+)'/.exec(src);
+    if (m) KEY = m[1];
+  } catch (e) {}
+  var q = new URLSearchParams(location.search);
+  try {
+    if (q.get('reset')) localStorage.removeItem(KEY);
+    var p = q.get('p');
+    if (p) localStorage.setItem(KEY, p);
+    localStorage.setItem('__key', KEY);
+    localStorage.setItem('__shotY', q.get('y') || '10300');
+    /* anything else in the query is stashed under __name for the eval script
+       to pick up — the query itself does not survive the redirect */
+    q.forEach(function (v, k) {
+      if (k !== 'p' && k !== 'y' && k !== 'reset') localStorage.setItem('__' + k, v);
+    });
+  } catch (e) {}
+  location.replace('/index.html');
+})();
+</script>
+</body>

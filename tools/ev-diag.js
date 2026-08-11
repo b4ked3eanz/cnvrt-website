@@ -1,0 +1,10 @@
+var ids = ['tnav','tnavPlate','tnavHit','menuBtn','snav','snavGlow','snavClose'];
+var out = {};
+ids.forEach(function(i){ out[i] = !!document.getElementById(i); });
+out['.menu__bars'] = !!document.querySelector('.menu__bars');
+out['.snav__item'] = document.querySelectorAll('.snav__item').length;
+out.readyState = document.readyState;
+out.htmlBytes = document.documentElement.outerHTML.length;
+out.hasSeedCards = !!document.querySelector('#wkSeed #prCards');
+out.hasPriceSection = !!document.querySelector('section.price');
+return out;

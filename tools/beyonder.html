@@ -1,0 +1,359 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>THE BEYONDER</title>
+<link rel="stylesheet" href="/assets/fonts/fonts.css">
+<!--
+  THE BEYONDER — see a page as another screen would render it.
+  UI is Figma 585:9612 / 587:9647: one floating toolbar, nothing else.
+
+  HOW IT WORKS
+  An <iframe> is sized to the chosen screen's CSS viewport and scaled to fit.
+  Everything inside is genuinely laid out at that size — 100vw, media queries
+  and documentElement.clientWidth (the number index.html's --u syncs off) all
+  report the simulated screen. The caption reads --u back OUT of the frame
+  rather than trusting the arithmetic.
+
+  THE ONE NUMBER PEOPLE GET WRONG
+  A "4K monitor" is not a 3840 viewport. 3840x2160 at 150% OS scaling hands the
+  page 2560x1440 — the same number a 1440p panel gives it. Hence two separate
+  controls: resolution and scaling.
+
+  READING IT
+  Flipping Resized <-> Your Screen is a clean A/B. On a design that scales
+  everything off --u (this one does) most of the page will not move, because at
+  a fixed aspect ratio it genuinely is the same picture — that is what a
+  proportional design means. What moves is anything capped or absolute, and the
+  caption counts it for you.
+
+  Only devicePixelRatio can't be simulated; it belongs to your real monitor and
+  changes canvas sharpness, not one layout number.
+
+  FIDELITY (the ffsbruh pass — three things a screenshot hid)
+  1. cornerSmoothing is 1.0 on the bar (r10) and the toggle shell + pills
+     (r6/r4), and 0.0 on every dropdown and input. So the squircles are real
+     clip-paths and the controls are honestly plain border-radius. Figma's SVG
+     exporter collapses smoothing to a bare rx, so the corner geometry is
+     reconstructed from Figma's own control points (see SQ below).
+  2. The chevron is a STEPPED pixel-art glyph of five 2x2 blocks, not the
+     smooth triangle it looks like at 10x6. Exported path, not hand-drawn.
+  3. Every 1px stroke is a gradient, and the inputs' runs opposite to the
+     dropdowns' — dark-to-light instead of light-to-dark.
+-->
+<style>
+:root{
+  --ink:#fff;
+  --font:'MD Thermochrome',ui-monospace,Menlo,Consolas,monospace;
+  --hot:#FF4208;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:#0c0c0c; color:var(--ink);
+  font:500 16px/19.2px var(--font); letter-spacing:.06em;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+
+/* ---- the bar — Figma 587:9647, 1541x44 ------------------------------- */
+/* The shadow stack lives on the WRAPPER, as filter:drop-shadow rather than
+   box-shadow. The bar is clipped to a squircle path, and clip-path clips a
+   box-shadow away with everything else — drop-shadow follows the clipped
+   silhouette instead, which is the only way to keep both. All five, in order;
+   the fifth is 0-alpha in Figma so it is omitted. */
+.barwrap{
+  flex:0 0 auto; display:flex; justify-content:center; padding:20px 20px 4px;
+  filter:drop-shadow(0 4px 10px rgba(0,0,0,.22)) drop-shadow(0 18px 18px rgba(0,0,0,.19))
+         drop-shadow(0 40px 24px rgba(0,0,0,.11)) drop-shadow(0 72px 29px rgba(0,0,0,.03));
+}
+.bar{
+  height:44px;
+  background:linear-gradient(180deg,#3C3C3C 0%,#212121 100%);
+  display:flex; align-items:center; gap:80px; padding:0 16px;
+  max-width:100%; overflow-x:auto; scrollbar-width:none;
+  /* clip-path is set from JS — cornerSmoothing 1.0, r=10 */
+}
+.bar::-webkit-scrollbar{display:none}
+.grp{display:flex; align-items:center; gap:12px; flex:0 0 auto}
+.lbl{white-space:nowrap}
+
+/* Controls are cornerSmoothing 0.0 — plain border-radius is CORRECT here, and
+   only the bar and the toggle are true squircles. Their 1px stroke is a
+   GRADIENT, so it is painted as a border-box background layer under a
+   padding-box fill; a flat border colour is visibly wrong along the bottom.
+
+   The chevron is Figma's own exported path: a stepped pixel-art glyph of five
+   2x2 blocks, NOT a smooth triangle. Hand-drawing it was the mistake this
+   whole checklist exists to catch. #FFF1E9 at the instance's 0.5 opacity. */
+.ctl{
+  height:30px; border-radius:6px; padding:0 30px 0 9px;
+  border:1px solid transparent;
+  background:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M6 6H4V4H6V6ZM4 4H2V2H4V4ZM8 4H6V2H8V4ZM2 2H0V0H2V2ZM10 2H8V0H10V2Z' fill='%23FFF1E9' fill-opacity='.5'/></svg>") no-repeat right 9px center padding-box,
+    linear-gradient(180deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,.04) 100%) padding-box,
+    linear-gradient(180deg,rgba(255,255,255,.12) 0%,rgba(153,153,153,.04) 100%) border-box;
+  box-shadow:0 1px 2px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.16);
+  color:var(--ink); font:inherit; letter-spacing:inherit;
+  appearance:none; -webkit-appearance:none; cursor:pointer;
+}
+.ctl option{background:#373737; color:#fff}
+.ctl:focus{outline:none}
+/* the inputs' stroke gradient runs the OTHER WAY — dark at the top, light at
+   the bottom — which is the opposite of the dropdowns above. Not a typo. */
+.num{
+  height:25px; width:55px; border-radius:6px; padding:0 8px; text-align:center;
+  border:1px solid transparent;
+  background:
+    linear-gradient(rgba(11,11,11,.04),rgba(11,11,11,.04)) padding-box,
+    linear-gradient(180deg,rgba(153,153,153,.04) 0%,rgba(255,255,255,.08) 100%) border-box;
+  color:var(--ink); font:inherit; letter-spacing:inherit;
+  appearance:textfield; -moz-appearance:textfield;
+}
+.num::-webkit-outer-spin-button,.num::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.num:focus{outline:none; border-color:rgba(255,255,255,.22)}
+.x{opacity:.5}
+
+/* segmented toggle — 176x32 shell at r6, 24-tall pills at r4, all
+   cornerSmoothing 1.0, so all three are clipped to squircle paths from JS.
+   The active pill's shadow is a filter, not a box-shadow, for the same reason
+   the bar's is: clip-path would cut a box-shadow away. */
+.seg{
+  height:32px; background:rgba(0,0,0,.18);
+  display:flex; align-items:center; gap:4px; padding:4px; flex:0 0 auto;
+}
+.seg button{
+  height:24px; border:0; background:transparent;
+  color:rgba(255,255,255,.7); font:inherit; letter-spacing:inherit;
+  padding:0 6px; cursor:pointer; white-space:nowrap;
+}
+.seg button[aria-pressed="true"]{
+  background:rgba(255,66,8,.12); color:var(--hot);
+  filter:drop-shadow(0 1px 2px rgba(255,66,8,.12));
+}
+
+/* ---- the screen ------------------------------------------------------ */
+.stage{flex:1; display:flex; align-items:center; justify-content:center; padding:16px 20px 8px; min-height:0}
+.scr{position:relative; background:#000; overflow:hidden; border-radius:4px;
+     box-shadow:0 18px 60px rgba(0,0,0,.75), 0 0 0 1px rgba(255,255,255,.07)}
+iframe{border:0; display:block; background:#000; transform-origin:0 0}
+/* Fixed height, not content height. draw() measures the stage to fit the
+   frame, and it runs BEFORE the caption has any text — so a caption that sizes
+   to its content is zero-tall at that moment, the stage measures too big, and
+   the screen ends up overlapping the line it just pushed down. */
+.cap{
+  flex:0 0 auto; height:36px; display:flex; align-items:center; justify-content:center;
+  padding:0 20px; font-size:13px; color:rgba(255,255,255,.42); letter-spacing:.05em;
+  white-space:nowrap; overflow:hidden;
+}
+/* the 0.06em tracking eats the single space either side of a <b>, so give it
+   real margin instead of relying on the whitespace in the template */
+.cap b{font-weight:500; color:rgba(255,255,255,.8); margin:0 .35em}
+.cap .k{color:var(--hot)}
+#ghost{position:absolute; left:-99999px; top:0; visibility:hidden; pointer-events:none}
+</style>
+
+<div class="barwrap">
+  <div class="bar" id="bar">
+    <div class="grp"><span class="lbl">Select Preset</span>
+      <select class="ctl" id="preset" style="width:224px"></select></div>
+
+    <div class="grp"><span class="lbl">Custom Resolution</span>
+      <input class="num" id="pw" type="number" value="3840">
+      <span class="x">x</span>
+      <input class="num" id="ph" type="number" value="2160" style="width:52px"></div>
+
+    <div class="grp"><span class="lbl">OS Scaling</span>
+      <select class="ctl" id="os" style="width:93px">
+        <option>100</option><option>125</option><option>150</option>
+        <option>175</option><option>200</option><option>250</option>
+      </select></div>
+
+    <div class="seg" id="which">
+      <button data-w="sim"  aria-pressed="true">Resized</button>
+      <button data-w="mine" aria-pressed="false">Your Screen</button>
+    </div>
+
+    <div class="grp"><span class="lbl">Section</span>
+      <select class="ctl" id="sec" style="width:160px"></select></div>
+  </div>
+</div>
+
+<div class="stage"><div class="scr" id="scr"></div></div>
+<div class="cap" id="cap"></div>
+<iframe id="ghost"></iframe>
+
+<script>
+/* Native panel resolutions. OS scaling is separate on purpose — it is what
+   turns native pixels into the CSS viewport, and conflating the two is the
+   whole reason "how does it look on 4K" gets answered wrong. */
+const PRESETS = [
+  { n:'4K Monitor',        w:3840, h:2160, os:100 },
+  { n:'4K @150%',          w:3840, h:2160, os:150 },
+  { n:'1440p',             w:2560, h:1440, os:100 },
+  { n:'Ultrawide 3440',    w:3440, h:1440, os:100 },
+  { n:'Super ultra 5120',  w:5120, h:1440, os:100 },
+  { n:'5K',                w:5120, h:2880, os:100 },
+  { n:'MacBook Pro 16',    w:3456, h:2234, os:200 },
+  { n:'MacBook Air 13',    w:2560, h:1664, os:200 },
+  { n:'1080p',             w:1920, h:1080, os:100 },
+  { n:'Laptop 1366',       w:1366, h:768,  os:100 },
+];
+const SECTIONS = ['hero','sec2','offerings','work','pricing','faq','contact'];
+const TRACK = [
+  ['hero headline','.hero__h1, .hero h1, .hero__title'], ['top nav','.nav'], ['logo','.logo'],
+  ['HUD zone','.ftr__zone'], ['footer column','.ftr__col'], ['wordmark','.ftr__mark'],
+  ['footer links','.ftr__grp--jump'], ['footer CTA','#ftrCta'], ['footer meta','.ftr__meta--l'],
+];
+const $ = id => document.getElementById(id);
+let which = 'sim', touched = false;
+
+/* ---- squircles (cornerSmoothing 1.0) ---------------------------------
+   Figma's SVG exporter collapses cornerSmoothing to a plain rx, so the corner
+   geometry cannot be read back out of an export — it has to be reconstructed.
+   These seven offsets are Figma's OWN control points for a 90-degree corner at
+   r=10, smoothing 1.0, lifted from this project's side-nav plate (index.html,
+   PANEL_OFF) and normalised to r=1. A squircle corner is self-similar, so the
+   same table scales to any radius.
+
+   Note the arm: the curve leaves the edge 2r from the vertex, not r. That long
+   tangent with a tight shoulder is exactly what border-radius cannot express. */
+const SQ = [[0,2],[0,1.05719],[0,0.58579],[0.29289,0.29289],[0.58579,0],[1.05719,0],[2,0]];
+function sqPath(w, h, r){
+  r = Math.min(r, Math.min(w, h) / 4);          // 2r per side must still fit
+  const f = n => Math.round(n*1000)/1000;
+  // one corner, placed at vertex (vx,vy) with axis signs (sx,sy)
+  const C = (vx, vy, sx, sy) => SQ.map(([a,b]) => [f(vx + sx*a*r), f(vy + sy*b*r)]);
+  const seg = p => 'C'+p[1][0]+' '+p[1][1]+' '+p[2][0]+' '+p[2][1]+' '+p[3][0]+' '+p[3][1]
+                 + 'C'+p[4][0]+' '+p[4][1]+' '+p[5][0]+' '+p[5][1]+' '+p[6][0]+' '+p[6][1];
+  const tl = C(0,0, 1, 1), tr = C(w,0, -1, 1), br = C(w,h, -1,-1), bl = C(0,h, 1,-1);
+  // tl runs left-edge -> top-edge; the others are mirrored, so walk tr/br/bl backwards
+  const rev = p => p.slice().reverse();
+  return 'M'+tl[0][0]+' '+tl[0][1] + seg(tl)
+       + 'L'+rev(tr)[0][0]+' '+rev(tr)[0][1] + seg(rev(tr))
+       + 'L'+br[0][0]+' '+br[0][1] + seg(br)
+       + 'L'+rev(bl)[0][0]+' '+rev(bl)[0][1] + seg(rev(bl)) + 'Z';
+}
+function clipSquircle(el, r){
+  if (!el) return;
+  const b = el.getBoundingClientRect();
+  if (!b.width || !b.height) return;
+  el.style.clipPath = "path('" + sqPath(b.width, b.height, r) + "')";
+}
+function applySquircles(){
+  clipSquircle($('bar'), 10);
+  clipSquircle($('which'), 6);
+  [...$('which').children].forEach(b => clipSquircle(b, 4));
+}
+
+/* screens -------------------------------------------------------------- */
+function screens(){
+  const os = (+$('os').value||100)/100;
+  const sim  = { w:Math.round((+$('pw').value||1920)/os), h:Math.round((+$('ph').value||1080)/os),
+                 native:(+$('pw').value)+'x'+(+$('ph').value), os };
+  const mine = { w:screen.width, h:screen.height, native:'your panel', os:devicePixelRatio||1 };
+  return { sim, mine };
+}
+
+/* draw ----------------------------------------------------------------- */
+function draw(){
+  const { sim, mine } = screens();
+  const d = which === 'sim' ? sim : mine;
+  const stage = $('scr').parentElement;
+  /* clientHeight still includes the stage's own padding, so subtract it back
+     out (16 top + 8 bottom) plus a couple of px of breathing room */
+  const k = Math.min((stage.clientWidth-40)/d.w, (stage.clientHeight-28)/d.h);
+  const w = Math.round(d.w*k), h = Math.round(d.h*k);
+
+  $('scr').style.width = w+'px'; $('scr').style.height = h+'px';
+  $('scr').innerHTML = '<iframe style="width:'+d.w+'px;height:'+d.h+'px;transform:scale('+k+')"></iframe>';
+  const fr = $('scr').querySelector('iframe');
+  fr.src = '/index.html';
+  fr.addEventListener('load', () => setTimeout(() => { jump(); caption(); compare(); }, 200));
+  caption(); applySquircles();
+}
+
+function jump(){
+  const s = $('sec').value; if (!s) return;
+  try{ const doc = $('scr').querySelector('iframe').contentDocument;
+       const el = doc.getElementById(s); if (el) el.scrollIntoView(); }catch(e){}
+}
+
+/* the caption is the whole read-out now — kept to one line on purpose */
+function caption(extra){
+  const { sim, mine } = screens();
+  const d = which === 'sim' ? sim : mine;
+  const ucap = Math.min(1, d.w/1920);
+  let live = '';
+  try{
+    const doc = $('scr').querySelector('iframe').contentDocument;
+    if (doc) live = ' · page reports <b>'+doc.documentElement.clientWidth+'px</b>';
+  }catch(e){}
+  $('cap').innerHTML =
+    '<b>'+d.w+' x '+d.h+'</b> css'+
+    (d.os!==1 ? ' — '+d.native+' at '+Math.round(d.os*100)+'%' : '')+
+    ' · --u <b>'+(d.w/1920).toFixed(3)+'px</b> · --ucap <b>'+ucap.toFixed(3)+'px</b>' +
+    live + (extra||'');
+}
+
+/* what actually moves — measured, not guessed --------------------------- */
+function measure(doc){
+  const W = doc.documentElement.clientWidth, out = {};
+  for (const [n,q] of TRACK){
+    let el=null; for (const one of q.split(',')){ el=doc.querySelector(one.trim()); if(el) break; }
+    out[n] = el ? +(el.getBoundingClientRect().width/W*100).toFixed(2) : null;
+  }
+  return out;
+}
+let tok = 0;
+function compare(){
+  const { sim, mine } = screens();
+  const other = which === 'sim' ? mine : sim;
+  const g = $('ghost'), t = ++tok;
+  g.style.width = other.w+'px'; g.style.height = other.h+'px';
+  g.onload = () => { if (t!==tok) return; setTimeout(() => {
+    if (t!==tok) return;
+    let A,B; try{ A=measure($('scr').querySelector('iframe').contentDocument); B=measure(g.contentDocument); }catch(e){ return; }
+    let moved=0, total=0;
+    for (const [n] of TRACK){ if (A[n]==null||B[n]==null) continue; total++; if (Math.abs(A[n]-B[n])>0.4) moved++; }
+    caption(total ? ' · <span class="k">'+moved+' of '+total+'</span> elements differ from '+
+                    (which==='sim'?'your screen':'that monitor') : '');
+  }, 260); };
+  g.src = '/index.html';
+}
+
+/* wiring --------------------------------------------------------------- */
+$('preset').innerHTML = PRESETS.map((p,i)=>'<option value="'+i+'">'+p.n+'</option>').join('')
+  + '<option value="c">Custom</option>';
+$('sec').innerHTML = SECTIONS.map(s=>'<option value="'+s+'">'+s[0].toUpperCase()+s.slice(1)+'</option>').join('');
+
+$('preset').onchange = () => {
+  const p = PRESETS[+$('preset').value];
+  if (p){ $('pw').value=p.w; $('ph').value=p.h; $('os').value=p.os; touched=false; }
+  save(); draw();
+};
+['pw','ph','os'].forEach(id => $(id).oninput = () => {
+  touched = true; $('preset').value = 'c';
+  clearTimeout(window._t); window._t = setTimeout(()=>{ save(); draw(); }, 300);
+});
+$('which').onclick = e => {
+  const w = e.target.dataset.w; if(!w) return;
+  which = w;
+  [...$('which').children].forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.w===w)));
+  save(); draw();
+};
+$('sec').onchange = () => { save(); jump(); setTimeout(caption,300); };
+addEventListener('resize', ()=>{ applySquircles(); clearTimeout(window._r); window._r=setTimeout(draw,180); });
+
+function save(){ try{ localStorage.beyonder3 = JSON.stringify({
+  which, p:$('preset').value, pw:$('pw').value, ph:$('ph').value,
+  os:$('os').value, sec:$('sec').value }); }catch(e){} }
+(function load(){
+  try{ const o=JSON.parse(localStorage.beyonder3||'null'); if(!o) return;
+    which=o.which||'sim'; $('preset').value=o.p; $('pw').value=o.pw; $('ph').value=o.ph;
+    $('os').value=o.os; $('sec').value=o.sec;
+  }catch(e){}
+})();
+[...$('which').children].forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.w===which)));
+draw();
+/* fonts change the bar's width, so re-clip once the real face has landed */
+document.fonts.ready.then(applySquircles);
+requestAnimationFrame(applySquircles);
+</script>
