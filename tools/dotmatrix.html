@@ -66,7 +66,7 @@ main{flex:1;display:flex;min-height:0}
 .fig{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
 .fig figcaption{color:var(--dimmer);font-size:10px;letter-spacing:.09em;
   text-transform:uppercase;white-space:nowrap}
-canvas{display:block;image-rendering:pixelated;background:#141414}
+canvas{display:block;background:#141414}
 #hold{position:relative;min-width:150px;min-height:96px;display:flex;align-items:flex-end}
 #none{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   border:1px dashed rgba(250,229,216,.18);border-radius:4px;color:var(--dimmer);
@@ -214,7 +214,16 @@ var out = document.getElementById('out'), ox = out.getContext('2d');
 var refc = document.getElementById('refc'), rx = refc.getContext('2d');
 
 var el = function (id) { return document.getElementById(id); };
-var Z = 2;                                     // preview zoom, CSS only
+var Z = 2;              // preview zoom
+var FORCE = null;       // export overrides the render scale
+var DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+/* The dots are geometry, not pixels. Zooming by stretching a 281px canvas to
+   8x is how you get a preview made of staircases while the exported PNG is
+   perfectly smooth — the thing on screen has to be DRAWN at the size it is
+   shown, at device resolution. The export is unaffected: it sets FORCE and
+   gets exactly the grid it asks for. */
+function renderScale() { return FORCE != null ? FORCE : Z * DPR; }
 var P = {
   fs: 80, cols: 16, rad: 0.466, fill: 1, thr: 0.5, gam: 1,
   mode: 'on', inv: false, alpha: true, trim: true,
@@ -291,7 +300,10 @@ function draw() {
   var W = Math.max(1, Math.round(P.cols * pitch));
   var H = Math.max(1, Math.round((s ? s.rows : 1) * pitch));
 
-  out.width = W; out.height = H;
+  var RS = renderScale();
+  out.width = Math.max(1, Math.round(W * RS));
+  out.height = Math.max(1, Math.round(H * RS));
+  ox.setTransform(RS, 0, 0, RS, 0, 0);         // everything below is in grid px
   ox.clearRect(0, 0, W, H);
   if (!P.tBg) { ox.fillStyle = P.bg; ox.fillRect(0, 0, W, H); }
   ox.fillStyle = P.ink;
@@ -329,13 +341,17 @@ function draw() {
     var desc = m.actualBoundingBoxDescent || 0;
     var rw = Math.max(1, Math.ceil(m.width) + 10);
     var rh = Math.max(H, Math.ceil(asc + desc) + 4);
-    refc.width = rw; refc.height = rh;
+    refc.width = Math.max(1, Math.round(rw * RS));
+    refc.height = Math.max(1, Math.round(rh * RS));
+    rx.setTransform(RS, 0, 0, RS, 0, 0);
     rx.clearRect(0, 0, rw, rh);
     if (!P.tBg) { rx.fillStyle = P.bg; rx.fillRect(0, 0, rw, rh); }
     rx.font = FONT;
     rx.fillStyle = P.ink;
     rx.textBaseline = 'alphabetic';
     rx.fillText(P.refTxt, 5, rh - 2 - desc);
+    refc.style.width = Math.round(rw * Z) + 'px';
+    refc.style.height = Math.round(rh * Z) + 'px';
     refc.style.display = '';
   } else {
     refc.style.display = 'none';
@@ -346,8 +362,6 @@ function draw() {
      hide exactly the aliasing you opened the tool to check. */
   out.style.width = Math.round(W * Z) + 'px';
   out.style.height = Math.round(H * Z) + 'px';
-  refc.style.width = Math.round(refc.width * Z) + 'px';
-  refc.style.height = Math.round(refc.height * Z) + 'px';
 
   /* The empty state used to be a 69x4 dark strip next to an unlabelled glyph,
      which reads as a stray screenshot rather than as a reference. Say what
@@ -450,11 +464,10 @@ seg.addEventListener('click', function (e) {
    Re-rendered at the requested scale rather than upscaled, so a 4x export is
    four times the resolution and not four times the same pixels. */
 function exportPng(scale) {
-  var keep = P.fs;
-  P.fs = keep * scale;
+  FORCE = scale;
   draw();
   var url = out.toDataURL('image/png');
-  P.fs = keep; draw();
+  FORCE = null; draw();
   var a = document.createElement('a');
   a.href = url;
   a.download = 'dotmatrix-' + P.cols + 'x.png';
