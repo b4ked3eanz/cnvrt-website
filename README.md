@@ -2463,6 +2463,22 @@ tab does not fire rAF and a scripted window is presentation-throttled. See
 `PERF.md` → `## How to measure` → `### The live meter` for what each field is
 for and which finding it was built to make visible. `tools/ev-fps.js` checks it.
 
+### The optimising dashboard — `tools/dash.html`
+
+Where the page drops, and what is doing it. `assets/js/perf-probe.js` (first
+script in `<head>`, inert without `?probe=1`) buckets the document into 100px
+scroll bands and charges every rAF driver, every `SY` subscriber and four
+synchronous stalls their own **self** time, identified by call site —
+`SY:paint index.html:10272`. The dashboard draws the site map, the fps profile
+and the per-band hitter list against one shared vertical axis.
+
+```
+arm + open site   →   scroll it (or Shift+S to sweep)   →   dash.html, reload
+```
+
+Full write-up, including why `unattributed` is usually the interesting line, is
+in `PERF.md` → `## How to measure` → `### The dashboard`.
+
 ### THE BEYONDER — `tools/beyonder.html`
 
 > **This tool has its own handoff: `BEYONDER.md`.** Read that before touching it

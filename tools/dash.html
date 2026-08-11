@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cnvrt — optimising dashboard</title>
+<!-- =========================================================================
+     OPTIMISING DASHBOARD
+     =========================================================================
+     Reads the trace that assets/js/perf-probe.js leaves in localStorage and
+     draws three things against ONE shared vertical axis, which is the page's
+     own scroll position:
+
+       left    the map. Every section, to scale, tinted by what it costs.
+       middle  the profile. One row per scroll band, fps running to the right,
+               so a drop reads as a canyon. Worst-frame spikes and long tasks
+               are drawn on top in their own lanes.
+       right   the hitters for whatever row the cursor is on — every driver
+               that ran there, in self-milliseconds per frame, worst first.
+
+     Same origin as the site, so localStorage is shared: serve the project
+     (node tools/serve.js) and open /tools/dash.html, or open it on Pages next
+     to the site it profiled. It cannot read a trace recorded on a different
+     origin — the file:// copy and the Pages copy keep separate traces.
+
+     HOW TO GET A TRACE
+
+       1. open the site with ?probe=1
+       2. scroll the whole page, by hand, at a normal reading pace
+          (or press Shift+S and let it sweep itself)
+       3. come back here and hit RELOAD
+
+     Read PERF.md `## How to measure` before you quote a number out of this.
+     Every caveat there applies: it is only true in a real, visible, focused
+     window, and `unattributed` is not a measurement error — it is style,
+     layout, paint, compositing and GPU, which no amount of JS wrapping can
+     see, and on this page it is often the whole story.
+     ====================================================================== -->
+<style>
+:root{
+  --bg:#0B0A09; --plate:#131110; --line:rgba(250,229,216,.10);
+  --ink:#FAE5D8; --dim:rgba(250,229,216,.46); --dimmer:rgba(250,229,216,.26);
+  --good:#8CE0A8; --warn:#FFC24A; --bad:#FF4208; --none:#221F1D;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--dim);font:12px/1.45 var(--mono);
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;
+  display:flex;flex-direction:column;overflow:hidden}
+
+header{display:flex;align-items:center;gap:14px;padding:10px 14px;
+  border-bottom:1px solid var(--line);flex:0 0 auto}
+h1{font:400 13px/1 var(--mono);color:var(--ink);letter-spacing:.02em}
+h1 span{color:var(--bad)}
+#meta{color:var(--dimmer);font-size:11px;flex:1;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+button{font:11px/1 var(--mono);color:var(--ink);background:#1B1817;
+  border:1px solid var(--line);border-radius:4px;padding:6px 9px;cursor:pointer}
+button:hover{border-color:rgba(250,229,216,.3);background:#241F1D}
+button.hot{color:var(--bad);border-color:rgba(255,66,8,.4)}
+
+main{flex:1;display:flex;min-height:0}
+.col{display:flex;flex-direction:column;min-height:0}
+.hd{padding:7px 10px;border-bottom:1px solid var(--line);color:var(--dimmer);
+  font-size:10px;letter-spacing:.09em;text-transform:uppercase;flex:0 0 auto}
+#mapCol{width:172px;border-right:1px solid var(--line);flex:0 0 auto}
+#gCol{flex:1;min-width:320px;border-right:1px solid var(--line)}
+#sideCol{width:392px;flex:0 0 auto;overflow:auto}
+#stage{flex:1;position:relative;min-height:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#gStage{cursor:crosshair}
+
+#side{padding:11px 12px}
+#head2{color:var(--ink);font-size:12px;margin-bottom:2px}
+#nums{margin:6px 0 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+#nums div{background:var(--plate);border:1px solid var(--line);border-radius:4px;
+  padding:6px 7px}
+#nums b{display:block;font-weight:400;font-size:15px;color:var(--ink);line-height:1.1}
+#nums i{font-style:normal;font-size:9.5px;color:var(--dimmer);letter-spacing:.06em;
+  text-transform:uppercase}
+
+table{width:100%;border-collapse:collapse}
+td{padding:3px 0;vertical-align:top}
+td.ms{text-align:right;color:var(--ink);width:64px;white-space:nowrap}
+td.pc{text-align:right;width:44px;color:var(--dimmer)}
+.nm{color:var(--dim);word-break:break-all}
+.nm em{font-style:normal;color:var(--dimmer)}
+.bar{height:3px;background:var(--bad);border-radius:2px;margin-top:2px;min-width:1px}
+tr.un .bar{background:rgba(250,229,216,.22)}
+tr.un .nm{color:var(--dimmer)}
+
+h3{font:400 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--dimmer);margin:16px 0 7px;padding-top:12px;border-top:1px solid var(--line)}
+.drop{display:flex;gap:8px;align-items:baseline;padding:3px 5px;margin:0 -5px;
+  border-radius:3px;cursor:pointer}
+.drop:hover{background:var(--plate)}
+.drop b{font-weight:400;color:var(--bad);width:42px;text-align:right}
+.drop span{color:var(--dimmer);flex:1;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.drop i{font-style:normal;color:var(--dim);font-size:11px}
+
+#empty{padding:22px;color:var(--dim);max-width:620px;line-height:1.7}
+#empty b{color:var(--ink);font-weight:400}
+#empty code{color:var(--warn)}
+kbd{background:#1B1817;border:1px solid var(--line);border-radius:3px;padding:1px 5px;
+  color:var(--ink)}
+.note{color:var(--dimmer);font-size:11px;margin-top:10px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>cnvrt <span>/</span> optimising dashboard</h1>
+  <div id="meta">no trace</div>
+  <button id="bArm" class="hot">arm + open site</button>
+  <button id="bReload">reload</button>
+  <button id="bExport">export</button>
+  <button id="bImport">import</button>
+  <button id="bClear">clear</button>
+  <input id="file" type="file" accept="application/json" hidden>
+</header>
+
+<main id="main" style="display:none">
+  <div class="col" id="mapCol">
+    <div class="hd">site map</div>
+    <div id="stage" style="position:relative"><canvas id="map"></canvas></div>
+  </div>
+  <div class="col" id="gCol">
+    <div class="hd" id="gHd">fps profile</div>
+    <div id="gStage" style="position:relative;flex:1;min-height:0"><canvas id="g"></canvas></div>
+  </div>
+  <div class="col" id="sideCol">
+    <div class="hd">heaviest hitters</div>
+    <div id="side"></div>
+  </div>
+</main>
+
+<div id="empty">
+  <p><b>No trace in this origin's localStorage yet.</b></p>
+  <p class="note">
+    1 &nbsp;Hit <b>arm + open site</b> above — it opens the site with
+    <code>?probe=1</code>, which turns the probe on and remembers it.<br>
+    2 &nbsp;Scroll the whole page by hand at a reading pace. Or press
+    <kbd>Shift</kbd>+<kbd>S</kbd> and it will sweep itself top to bottom.<br>
+    3 &nbsp;Come back here and hit <b>reload</b>.
+  </p>
+  <p class="note">
+    The probe only records frames while the page is actually MOVING, so parking
+    on a section does not dilute it with cheap idle frames. It buckets by 100px
+    of scroll, and it charges every rAF driver, every SY subscriber and the four
+    synchronous stalls (<code>toDataURL</code>, <code>toBlob</code>,
+    <code>getImageData</code>, <code>readPixels</code>) their own SELF time — so
+    an encode shows up as the encode and not as whoever asked for it.
+  </p>
+  <p class="note">
+    It has to be a real window you are scrolling with your own hand. A hidden
+    tab does not fire rAF and a scripted one is presentation-throttled — see
+    <code>PERF.md → How to measure</code>, which exists because this project has
+    been wrong about exactly that three times.
+  </p>
+</div>
+
+<script>
+/* ======================================================================
+   1. THE TRACE
+   ====================================================================== */
+var TRACE = 'cnvrt.perf.trace';
+var T = null, B = 100, rows = [], target = 60, docH = 0, secs = [];
+var view = { y0: 0, y1: 1 };          // the visible scroll range, in px
+var hoverY = null, pinned = null;
+
+function load() {
+  var raw = null;
+  try { raw = localStorage.getItem(TRACE); } catch (e) {}
+  if (!raw) return false;
+  try { T = JSON.parse(raw); } catch (e) { return false; }
+  if (!T || !T.bands) return false;
+
+  B = T.band || 100;
+  docH = T.docH || 0;
+  secs = T.secs || [];
+
+  /* one row per band index that has data, plus the derived numbers */
+  rows = [];
+  var maxI = 0;
+  for (var k in T.bands) { var i = +k; if (i > maxI) maxI = i; }
+  for (var i = 0; i <= maxI; i++) {
+    var b = T.bands[i];
+    if (!b || !b.n) { rows.push(null); continue; }
+    var ms = b.t / b.n;
+    var sum = 0; for (var s in b.src) sum += b.src[s];
+    rows.push({
+      i: i, y0: i * B, n: b.n, ms: ms, fps: b.n / (b.t / 1000),
+      worst: b.worst, lt: b.lt || 0, ltms: b.ltms || 0,
+      src: b.src, cnt: b.cnt || {}, un: Math.max(0, ms - sum / b.n)
+    });
+  }
+  if (!docH) docH = (maxI + 1) * B;
+
+  /* The panel rate, inferred the same way the on-page meter does it: the best
+     the machine actually managed anywhere on the page, not an assumed 60. p90
+     of the bands rather than the single best, so one lucky band cannot set it. */
+  var f = rows.filter(Boolean).map(function (r) { return r.fps; }).sort(function (a, b) { return a - b; });
+  var p90 = f.length ? f[Math.min(f.length - 1, (f.length * 0.9) | 0)] : 60;
+  var RATES = [240, 165, 144, 120, 90, 75, 72, 60, 50, 30];
+  target = p90;
+  for (var r0 = 0; r0 < RATES.length; r0++) {
+    if (Math.abs(p90 - RATES[r0]) / RATES[r0] < 0.08) { target = RATES[r0]; break; }
+  }
+
+  view = { y0: 0, y1: docH };
+  return true;
+}
+
+function fmt(n, d) { return n.toFixed(d == null ? 0 : d).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function secAt(y) {
+  var mid = y + (T.vh || 1080) * 0.5, name = '-';
+  for (var i = 0; i < secs.length; i++) {
+    if (mid >= secs[i][1] && mid < secs[i][1] + secs[i][2]) return secs[i][0];
+    if (mid >= secs[i][1]) name = secs[i][0];
+  }
+  return name;
+}
+/* Three bands, against the panel rate rather than against 60 — the same call
+   the on-page meter makes, and for the same reason: on a 144Hz screen a steady
+   60 is a halving and must not read green. */
+var TONES = [[140, 224, 168], [255, 194, 74], [255, 66, 8]];
+function toneN(fps) { return fps >= target * 0.9 ? 0 : fps >= target * 0.6 ? 1 : 2; }
+function tone(fps) { var c = TONES[toneN(fps)]; return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+function toneA(fps, a) { var c = TONES[toneN(fps)]; return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
+
+/* ======================================================================
+   2. DRAWING
+   ----------------------------------------------------------------------
+   Both canvases share one y mapping: view.y0..view.y1 of the document onto
+   0..h of the canvas. That is what makes the map and the profile the same
+   picture — a row in one is the same scroll position as the row beside it.
+   ====================================================================== */
+var mapC = document.getElementById('map'), gC = document.getElementById('g');
+var mx, gx, MW = 0, MH = 0, GW = 0, GH = 0, dpr = 1;
+
+function fit(c) {
+  var r = c.getBoundingClientRect();
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  c.width = Math.max(1, Math.round(r.width * dpr));
+  c.height = Math.max(1, Math.round(r.height * dpr));
+  var x = c.getContext('2d');
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [x, r.width, r.height];
+}
+function resize() {
+  var a = fit(mapC); mx = a[0]; MW = a[1]; MH = a[2];
+  var b = fit(gC);   gx = b[0]; GW = b[1]; GH = b[2];
+  draw();
+}
+function yToPx(y) { return (y - view.y0) / (view.y1 - view.y0) * GH; }
+function pxToY(p) { return view.y0 + p / GH * (view.y1 - view.y0); }
+
+/* rows visible in one pixel row, reduced to the WORST of them. A profiler that
+   averages at low zoom hides the spike that made you open it. */
+function rowsAt(py, h) {
+  var a = pxToY(py), b = pxToY(py + 1);
+  var i0 = Math.floor(a / B), i1 = Math.ceil(b / B);
+  var out = null;
+  for (var i = i0; i <= i1; i++) {
+    var r = rows[i];
+    if (!r) continue;
+    if (!out || r.fps < out.fps) out = r;
+  }
+  return out;
+}
+
+function drawMap() {
+  mx.clearRect(0, 0, MW, MH);
+  var pad = 34;                      // room for the labels on the left
+  /* the whole document as one column, sections stacked */
+  for (var i = 0; i < secs.length; i++) {
+    var s = secs[i], y = s[1], hgt = s[2];
+    var top = (y - view.y0) / (view.y1 - view.y0) * MH;
+    var bot = (y + hgt - view.y0) / (view.y1 - view.y0) * MH;
+    if (bot < 0 || top > MH) continue;
+
+    /* tint by the section's own worst-quartile fps, so a section that is fine
+       for 90% of its length and terrible for the rest does not read as fine */
+    var f = [];
+    for (var j = Math.floor(y / B); j < (y + hgt) / B; j++) if (rows[j]) f.push(rows[j].fps);
+    f.sort(function (a, b) { return a - b; });
+    var q = f.length ? f[(f.length * 0.25) | 0] : null;
+
+    mx.fillStyle = q == null ? 'rgba(250,229,216,.04)' : toneA(q, 0.14);
+    mx.fillRect(pad, Math.max(0, top), MW - pad, Math.min(MH, bot) - Math.max(0, top));
+    mx.strokeStyle = 'rgba(250,229,216,.14)';
+    mx.beginPath(); mx.moveTo(pad, Math.max(0, top) + .5); mx.lineTo(MW, Math.max(0, top) + .5); mx.stroke();
+
+    /* Label inside the section's own band or not at all. faq and contact are
+       ~35px each at full zoom and three stacked lines each would write over
+       their neighbours — a map that lies about where a section starts is worse
+       than a map with a missing label. */
+    var t0 = Math.max(0, top), b0 = Math.min(MH, bot), room = b0 - t0;
+    if (room < 11) continue;
+    var lines = room >= 40 ? 3 : room >= 24 ? 2 : 1;
+    var y0 = t0 + (room - (lines - 1) * 12) / 2 + 4;
+    mx.fillStyle = '#FAE5D8';
+    mx.font = '11px ui-monospace,Menlo,Consolas,monospace';
+    mx.fillText(s[0], pad + 7, y0);
+    mx.font = '10px ui-monospace,Menlo,Consolas,monospace';
+    if (lines >= 2) {
+      mx.fillStyle = 'rgba(250,229,216,.34)';
+      mx.fillText(Math.round(hgt / (T.vh || 1080) * 100) + 'vh', pad + 7, y0 + 12);
+    }
+    if (lines >= 3 && q != null) {
+      mx.fillStyle = tone(q);
+      mx.fillText(Math.round(q) + ' fps', pad + 7, y0 + 24);
+    }
+  }
+  /* the ruler down the left edge, in viewport heights */
+  mx.fillStyle = 'rgba(250,229,216,.30)';
+  mx.font = '9px ui-monospace,Menlo,Consolas,monospace';
+  var vh = T.vh || 1080, step = Math.max(1, Math.round((view.y1 - view.y0) / vh / 10));
+  for (var v = 0; v * vh < view.y1; v += step) {
+    var py = (v * vh - view.y0) / (view.y1 - view.y0) * MH;
+    if (py < 8 || py > MH - 2) continue;
+    mx.fillText((v * 100) + 'vh', 2, py + 3);
+    mx.fillStyle = 'rgba(250,229,216,.08)';
+    mx.fillRect(pad - 4, py, 4, 1);
+    mx.fillStyle = 'rgba(250,229,216,.30)';
+  }
+  markerOn(mx, MW, MH, 0);
+}
+
+function drawGraph() {
+  gx.clearRect(0, 0, GW, GH);
+  var LT = 34;                        // right-hand gutter: worst-frame + longtask lanes
+  var W = GW - LT;
+
+  /* vertical gridlines at quarters of the panel rate */
+  gx.font = '9px ui-monospace,Menlo,Consolas,monospace';
+  for (var q = 1; q <= 4; q++) {
+    var x = W * q / 4;
+    gx.fillStyle = q === 4 ? 'rgba(250,229,216,.13)' : 'rgba(250,229,216,.055)';
+    gx.fillRect(x - 1, 0, 1, GH);
+    gx.fillStyle = 'rgba(250,229,216,.28)';
+    gx.fillText(Math.round(target * q / 4) + '', x - 16, 10);
+  }
+
+  for (var py = 0; py < GH; py++) {
+    var r = rowsAt(py, GH);
+    if (!r) {
+      gx.fillStyle = '#1A1817';
+      gx.fillRect(0, py, 3, 1);
+      continue;
+    }
+    var w = Math.max(1, Math.min(1, r.fps / target) * W);
+    gx.fillStyle = tone(r.fps);
+    gx.fillRect(0, py, w, 1);
+
+    /* worst-frame lane: log-ish, one panel interval is nothing, 500ms is full */
+    var idealMs = 1000 / target;
+    var k = Math.min(1, Math.log(Math.max(1, r.worst / idealMs)) / Math.log(40));
+    if (k > 0.02) {
+      gx.fillStyle = 'rgba(255,66,8,' + (0.25 + 0.75 * k).toFixed(2) + ')';
+      gx.fillRect(GW - LT + 4, py, Math.max(1, k * 18), 1);
+    }
+    if (r.lt) {
+      gx.fillStyle = '#FF4208';
+      gx.fillRect(GW - 9, py, Math.min(8, 2 + r.lt), 1);
+    }
+  }
+
+  gx.fillStyle = 'rgba(250,229,216,.10)';
+  gx.fillRect(GW - LT, 0, 1, GH);
+  gx.fillStyle = 'rgba(250,229,216,.28)';
+  gx.fillText('worst', GW - LT + 4, 10);
+  markerOn(gx, GW, GH, 1);
+}
+
+function markerOn(cx, w, h, full) {
+  var sel = pinned != null ? pinned : hoverY;
+  if (sel == null) return;
+  var py = Math.round(yToPx(sel)) + .5;
+  if (py < 0 || py > h) return;
+  cx.strokeStyle = pinned != null ? '#FF4208' : 'rgba(250,229,216,.55)';
+  cx.lineWidth = 1;
+  cx.beginPath(); cx.moveTo(0, py); cx.lineTo(w, py); cx.stroke();
+}
+
+function draw() { if (!T) return; drawMap(); drawGraph(); }
+
+/* ======================================================================
+   3. THE HITTERS PANEL
+   ====================================================================== */
+function bandAt(y) {
+  var i = Math.floor(y / B);
+  for (var d = 0; d < 6; d++) {          // nearest band with data
+    if (rows[i + d]) return rows[i + d];
+    if (rows[i - d]) return rows[i - d];
+  }
+  return null;
+}
+
+function side() {
+  var sel = pinned != null ? pinned : hoverY;
+  var el = document.getElementById('side');
+  if (sel == null) { el.innerHTML = '<p style="color:var(--dimmer)">Move over the profile.</p>' + drops(); return; }
+  var r = bandAt(sel);
+  if (!r) { el.innerHTML = '<p style="color:var(--dimmer)">No frames recorded here — you did not scroll through it.</p>' + drops(); return; }
+
+  var list = [];
+  for (var k in r.src) list.push([k, r.src[k] / r.n, (r.cnt[k] || 0) / r.n]);
+  list.push(['__un', r.un, 0]);
+  list.sort(function (a, b) { return b[1] - a[1]; });
+  var top = list[0] ? list[0][1] : 1;
+
+  var h = '<div id="head2">y ' + fmt(r.y0) + '–' + fmt(r.y0 + B) + ' &nbsp;·&nbsp; ' +
+    Math.round(r.y0 / (T.vh || 1080) * 100) + 'vh &nbsp;·&nbsp; <b style="color:var(--ink)">' + secAt(r.y0) + '</b></div>' +
+    '<div id="nums">' +
+    '<div><b style="color:' + tone(r.fps) + '">' + Math.round(r.fps) + '</b><i>fps</i></div>' +
+    '<div><b>' + r.ms.toFixed(1) + '</b><i>ms / frame</i></div>' +
+    '<div><b style="color:' + (r.worst > 100 ? 'var(--bad)' : 'var(--ink)') + '">' + Math.round(r.worst) + '</b><i>worst ms</i></div>' +
+    '<div><b style="color:' + (r.lt ? 'var(--bad)' : 'var(--ink)') + '">' + r.lt + '</b><i>long tasks</i></div>' +
+    '</div><table>';
+
+  for (var i = 0; i < list.length; i++) {
+    var it = list[i], ms = it[1];
+    if (ms < 0.02) continue;
+    var un = it[0] === '__un';
+    var nm = un ? 'unattributed — style, layout, paint, composite, GPU'
+                : (T.names[it[0]] || it[0]);
+    var parts = nm.split('  ');
+    h += '<tr class="' + (un ? 'un' : '') + '"><td class="nm">' + parts[0] +
+         (parts[1] ? ' <em>' + parts[1] + '</em>' : '') +
+         '<div class="bar" style="width:' + Math.max(1, ms / top * 100).toFixed(1) + '%"></div></td>' +
+         '<td class="ms">' + ms.toFixed(2) + ' ms</td>' +
+         '<td class="pc">' + Math.round(ms / r.ms * 100) + '%</td></tr>';
+  }
+  h += '</table>';
+  el.innerHTML = h + drops();
+  wireDrops();
+}
+
+/* the twelve worst bands on the page, which is the actual to-do list */
+var dropCache = null;
+function drops() {
+  if (!dropCache) {
+    var all = rows.filter(Boolean).slice().sort(function (a, b) { return a.fps - b.fps; });
+    var picked = [], used = {};
+    for (var i = 0; i < all.length && picked.length < 12; i++) {
+      var g = Math.floor(all[i].y0 / (T.vh || 1080) / 2);   // one entry per 2vh, not 12 rows of one canyon
+      if (used[g]) continue;
+      used[g] = 1; picked.push(all[i]);
+    }
+    dropCache = picked;
+  }
+  var h = '<h3>worst 12 on the page</h3>';
+  for (var j = 0; j < dropCache.length; j++) {
+    var r = dropCache[j];
+    h += '<div class="drop" data-y="' + r.y0 + '"><b>' + Math.round(r.fps) + '</b>' +
+         '<i>' + secAt(r.y0) + '</i><span>' + Math.round(r.y0 / (T.vh || 1080) * 100) + 'vh · ' +
+         r.ms.toFixed(0) + 'ms/f · worst ' + Math.round(r.worst) + '</span></div>';
+  }
+  return h;
+}
+function wireDrops() {
+  var d = document.querySelectorAll('.drop');
+  for (var i = 0; i < d.length; i++) d[i].addEventListener('click', function () {
+    pinned = +this.getAttribute('data-y') + B / 2;
+    draw(); side();
+  });
+}
+
+/* ======================================================================
+   4. INPUT — hover, pin, wheel zoom, drag pan
+   ====================================================================== */
+function onMove(e) {
+  var r = gC.getBoundingClientRect();
+  hoverY = pxToY(e.clientY - r.top);
+  draw(); side();
+}
+document.getElementById('gStage').addEventListener('mousemove', onMove);
+document.getElementById('gStage').addEventListener('mouseleave', function () {
+  hoverY = null; draw(); side();
+});
+document.getElementById('gStage').addEventListener('click', function (e) {
+  var r = gC.getBoundingClientRect();
+  var y = pxToY(e.clientY - r.top);
+  pinned = (pinned != null && Math.abs(pinned - y) < (view.y1 - view.y0) / GH * 3) ? null : y;
+  draw(); side();
+});
+document.getElementById('gStage').addEventListener('wheel', function (e) {
+  e.preventDefault();
+  var r = gC.getBoundingClientRect();
+  var at = pxToY(e.clientY - r.top);
+  var f = e.deltaY > 0 ? 1.25 : 0.8;
+  var span = Math.min(docH, Math.max((T.vh || 1080) * 0.5, (view.y1 - view.y0) * f));
+  var k = (at - view.y0) / (view.y1 - view.y0);
+  view.y0 = at - span * k; view.y1 = view.y0 + span;
+  if (view.y0 < 0) { view.y0 = 0; view.y1 = span; }
+  if (view.y1 > docH) { view.y1 = docH; view.y0 = Math.max(0, docH - span); }
+  draw(); side();
+}, { passive: false });
+
+/* click a section on the map to fit it */
+document.getElementById('map').addEventListener('click', function (e) {
+  var r = mapC.getBoundingClientRect();
+  var y = view.y0 + (e.clientY - r.top) / r.height * (view.y1 - view.y0);
+  for (var i = 0; i < secs.length; i++) {
+    if (y >= secs[i][1] && y < secs[i][1] + secs[i][2]) {
+      view = { y0: secs[i][1], y1: secs[i][1] + secs[i][2] };
+      draw(); side(); return;
+    }
+  }
+  view = { y0: 0, y1: docH }; draw(); side();
+});
+
+/* ======================================================================
+   5. BUTTONS
+   ====================================================================== */
+var site = null;
+document.getElementById('bArm').addEventListener('click', function () {
+  site = window.open('../index.html?probe=1', 'cnvrtsite');
+  if (site) site.focus();
+});
+document.getElementById('bReload').addEventListener('click', boot);
+document.getElementById('bClear').addEventListener('click', function () {
+  try { localStorage.removeItem(TRACE); } catch (e) {}
+  boot();
+});
+document.getElementById('bExport').addEventListener('click', function () {
+  var raw = localStorage.getItem(TRACE) || '{}';
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+  a.download = 'cnvrt-perf-trace.json';
+  a.click();
+});
+
+/* Import an exported trace, or one fetched from `?trace=<url>`. A trace lives
+   in the localStorage of the origin that recorded it, so this is how a trace
+   from the Pages copy gets read next to a trace from localhost — and how the
+   headless check in tools/ev-dash.js gets one at all, since shot.js hard-kills
+   Chrome and localStorage never reaches disk. */
+document.getElementById('bImport').addEventListener('click', function () {
+  document.getElementById('file').click();
+});
+document.getElementById('file').addEventListener('change', function () {
+  var f = this.files && this.files[0];
+  if (!f) return;
+  var fr = new FileReader();
+  fr.onload = function () {
+    try { localStorage.setItem(TRACE, String(fr.result)); } catch (e) {}
+    boot();
+  };
+  fr.readAsText(f);
+});
+
+function boot() {
+  dropCache = null; pinned = null; hoverY = null;
+  var ok = load();
+  document.getElementById('main').style.display = ok ? 'flex' : 'none';
+  document.getElementById('empty').style.display = ok ? 'none' : 'block';
+  if (!ok) { document.getElementById('meta').textContent = 'no trace'; return; }
+
+  var n = rows.filter(Boolean).length;
+  document.getElementById('meta').textContent =
+    T.at.replace('T', ' ').slice(0, 19) + '  ·  ' + fmt(docH) + 'px doc  ·  ' +
+    n + ' of ' + rows.length + ' bands recorded  ·  ' + T.vw + 'x' + T.vh +
+    '  ·  panel read as ' + Math.round(target) + 'Hz';
+  document.getElementById('gHd').textContent =
+    'fps profile — 0 to ' + Math.round(target) + ' fps left to right, worst-frame and long-task lanes on the right';
+  resize();
+  side();
+}
+addEventListener('resize', function () { if (T) resize(); });
+
+var fromUrl = (location.search.match(/[?&]trace=([^&]+)/) || [])[1];
+if (fromUrl) {
+  fetch(decodeURIComponent(fromUrl)).then(function (r) { return r.text(); }).then(function (t) {
+    try { localStorage.setItem(TRACE, t); } catch (e) {}
+    boot();
+  }).catch(boot);
+} else boot();
+</script>
+</body>
+</html>

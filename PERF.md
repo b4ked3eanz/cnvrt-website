@@ -96,6 +96,61 @@ stops the moment it catches up to `scrollY` — so a settled page no longer idle
 all the way down while the meter is up. Hide it before measuring idle.
 `tools/ev-fps.js` is its regression check.
 
+### The dashboard — where it drops, and what is doing it
+
+`tools/dash.html`, fed by `assets/js/perf-probe.js`. The meter above tells you
+*that* the page dropped; this tells you **where on the page** and **which
+function**.
+
+```
+1  open the site with ?probe=1          (the dashboard's "arm + open site" does it)
+2  scroll the whole page by hand — or press Shift+S and it sweeps itself
+3  open tools/dash.html and hit reload
+```
+
+The probe cuts the document into 100px scroll bands and, for every frame
+rendered **while the page is moving**, charges that band the frame's cost. So
+parking on a section does not dilute it with cheap idle frames — every number
+is the cost of scrolling *through* there.
+
+Attribution is by wrapping, not by sampling. Every rAF callback and every `SY`
+subscriber is timed and identified once, by parsing its call site out of a
+stack, so the fifteen drivers hanging off the one scroll loop appear as fifteen
+lines — `SY:paint  index.html:10272` — instead of one. Time is **self** time:
+nesting is tracked with a stack, so a driver that spends 32 of its 40ms inside
+`toDataURL` is charged 8 and the encode is charged 32. Four synchronous stalls
+are wrapped by name because they are how a page like this actually dies:
+`toDataURL`, `toBlob`, `getImageData`, `readPixels`.
+
+Two things about it that are load-bearing:
+
+- **`unattributed` is not slop.** It is frame time minus everything charged —
+  style, layout, paint, composite, GPU, decode — none of which any JS wrapper
+  can see. On this page it is frequently the largest line, and when it is, the
+  answer is a surface, not a function. A fragment shader costing 9ms a frame is
+  9ms of unattributed; the JS that dispatched it costs 40 microseconds.
+- **The probe must be the first script in the document.** It works by wrapping
+  `requestAnimationFrame` before anything registers with it and by putting an
+  accessor on `window.SY` to catch the assignment. Move it below either and it
+  goes deaf. It is inert without `?probe=1`.
+
+The layout is one shared vertical axis — the page's own scroll position. The
+map on the left is every section to scale, tinted by its worst quartile; the
+profile is fps running to the right, so a drop reads as a canyon, with
+worst-frame and long-task lanes in the gutter; hovering any row lists that
+band's hitters, worst first, in self-ms per frame. Wheel to zoom, click a
+section on the map to fit it, click the profile to pin a row. **worst 12 on the
+page** is the to-do list, one entry per 2vh so a single canyon cannot fill it.
+
+The first full run of it agreed with item 2 and then sharpened it: at
+`y=10,700` in the offerings ring the frame cost 229ms, of which `getImageData`
+was 95ms, `toDataURL` 47ms and `anon index.html:12240` 33ms. That run was
+SwiftShader, where readback is disproportionately expensive, so **the split
+between those three is not yet a real-GPU number** — but the shape of it is,
+and `getImageData` was not on anyone's list before.
+
+`tools/ev-probe.js` and `tools/ev-dash.js` are the regression checks.
+
 ### The harnesses
 
 ```

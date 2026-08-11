@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CNVRTLABS — Ship stronger. Ship faster.</title>
 <link rel="stylesheet" href="assets/fonts/fonts.css">
+
+<!-- PERF PROBE. Inert unless armed with ?probe=1 - see the header of the file.
+     It has to be the FIRST script on the page: it works by wrapping rAF before
+     anything registers with it, and by catching the assignment to window.SY.
+     Feeds tools/dash.html. -->
+<script src="assets/js/perf-probe.js"></script>
 <style>
 /* ============================================================================
    cnvrt hero — run 3

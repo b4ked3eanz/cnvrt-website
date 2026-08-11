@@ -26,3 +26,7 @@ tools/sweep-eval.js
 # top: index.html references none of it, it is ~19MB, and git history is
 # forever. They stay on disk, they do not go in.
 /*.mp4
+
+# A recorded trace, written by tools/ev-probe.js through the server's /_save
+# route so tools/ev-dash.js has something to load. Regenerated on every run.
+tools/trace.json
