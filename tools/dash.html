@@ -68,7 +68,7 @@ main{flex:1;display:flex;min-height:0}
 #sideCol{width:392px;flex:0 0 auto;overflow:auto}
 #stage{flex:1;position:relative;min-height:0}
 canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-#gStage{cursor:crosshair}
+#gStage,#stage{cursor:crosshair}
 
 #side{padding:11px 12px}
 #head2{color:var(--ink);font-size:12px;margin-bottom:2px}
@@ -83,11 +83,15 @@ table{width:100%;border-collapse:collapse}
 td{padding:3px 0;vertical-align:top}
 td.ms{text-align:right;color:var(--ink);width:64px;white-space:nowrap}
 td.pc{text-align:right;width:44px;color:var(--dimmer)}
-.nm{color:var(--dim);word-break:break-all}
-.nm em{font-style:normal;color:var(--dimmer)}
-.bar{height:3px;background:var(--bad);border-radius:2px;margin-top:2px;min-width:1px}
+.nm{color:var(--dim);padding-right:10px}
+.nm b{display:block;font-weight:400;color:var(--ink);line-height:1.35}
+.nm em{display:block;font-style:normal;color:var(--dimmer);font-size:10.5px;
+  word-break:break-all;margin-top:1px}
+.bar{height:3px;background:var(--bad);border-radius:2px;margin:3px 0 5px;min-width:1px}
 tr.un .bar{background:rgba(250,229,216,.22)}
-tr.un .nm{color:var(--dimmer)}
+tr.un .nm b{color:var(--dim)}
+.verdict{color:var(--dim);line-height:1.55;margin:0 0 12px;padding:8px 9px;
+  background:var(--plate);border-left:2px solid var(--bad);border-radius:0 4px 4px 0}
 
 h3{font:400 10px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;
   color:var(--dimmer);margin:16px 0 7px;padding-top:12px;border-top:1px solid var(--line)}
@@ -167,7 +171,7 @@ kbd{background:#1B1817;border:1px solid var(--line);border-radius:3px;padding:1p
 var TRACE = 'cnvrt.perf.trace';
 var T = null, B = 100, rows = [], target = 60, docH = 0, secs = [];
 var view = { y0: 0, y1: 1 };          // the visible scroll range, in px
-var hoverY = null, pinned = null;
+var hoverY = null;                    // the cursor drives the selection, nothing else
 
 function load() {
   var raw = null;
@@ -237,23 +241,48 @@ function toneA(fps, a) { var c = TONES[toneN(fps)]; return 'rgba(' + c[0] + ',' 
    picture — a row in one is the same scroll position as the row beside it.
    ====================================================================== */
 var mapC = document.getElementById('map'), gC = document.getElementById('g');
-var mx, gx, MW = 0, MH = 0, GW = 0, GH = 0, dpr = 1;
+var mapV, gV;                                          // the visible contexts
+var mapB = document.createElement('canvas');           // back buffers: the map and
+var gB = document.createElement('canvas');             // the profile are drawn ONCE
+var mx, gx, MW = 0, MH = 0, GW = 0, GH = 0, dpr = 1;   // per view change, into these
 
-function fit(c) {
-  var r = c.getBoundingClientRect();
+/* Why a back buffer. The profile is a thousand one-pixel rows, each of which
+   scans the bands under it — perfectly cheap once, and far too expensive to
+   redo on every mousemove, which is exactly what a cursor that tracks the hand
+   demands. So: render() when the view or the size changes, draw() (a blit plus
+   the marker) when the cursor moves. A profiler that stutters while you read it
+   is not one. */
+function fit(vis, back) {
+  var r = vis.getBoundingClientRect();
   dpr = Math.min(devicePixelRatio || 1, 2);
-  c.width = Math.max(1, Math.round(r.width * dpr));
-  c.height = Math.max(1, Math.round(r.height * dpr));
-  var x = c.getContext('2d');
-  x.setTransform(dpr, 0, 0, dpr, 0, 0);
-  return [x, r.width, r.height];
+  var w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  vis.width = back.width = w; vis.height = back.height = h;
+  var bx = back.getContext('2d');
+  bx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [vis.getContext('2d'), bx, r.width, r.height];
 }
 function resize() {
-  var a = fit(mapC); mx = a[0]; MW = a[1]; MH = a[2];
-  var b = fit(gC);   gx = b[0]; GW = b[1]; GH = b[2];
-  draw();
+  var a = fit(mapC, mapB); mapV = a[0]; mx = a[1]; MW = a[2]; MH = a[3];
+  var b = fit(gC, gB);     gV   = b[0]; gx = b[1]; GW = b[2]; GH = b[3];
+  render(); draw();
 }
-function yToPx(y) { return (y - view.y0) / (view.y1 - view.y0) * GH; }
+function render() { if (!T) { return; } drawMap(); drawGraph(); }
+function draw() {
+  if (!T || !mapV) return;
+  mapV.setTransform(1, 0, 0, 1, 0, 0);
+  mapV.clearRect(0, 0, mapC.width, mapC.height);
+  mapV.drawImage(mapB, 0, 0);
+  mapV.setTransform(dpr, 0, 0, dpr, 0, 0);
+  marker(mapV, MW, MH, 0);
+
+  gV.setTransform(1, 0, 0, 1, 0, 0);
+  gV.clearRect(0, 0, gC.width, gC.height);
+  gV.drawImage(gB, 0, 0);
+  gV.setTransform(dpr, 0, 0, dpr, 0, 0);
+  marker(gV, GW, GH, 1);
+}
+function yToPxH(y, h) { return (y - view.y0) / (view.y1 - view.y0) * h; }
+function yToPx(y) { return yToPxH(y, GH); }
 function pxToY(p) { return view.y0 + p / GH * (view.y1 - view.y0); }
 
 /* rows visible in one pixel row, reduced to the WORST of them. A profiler that
@@ -325,7 +354,6 @@ function drawMap() {
     mx.fillRect(pad - 4, py, 4, 1);
     mx.fillStyle = 'rgba(250,229,216,.30)';
   }
-  markerOn(mx, MW, MH, 0);
 }
 
 function drawGraph() {
@@ -371,20 +399,41 @@ function drawGraph() {
   gx.fillRect(GW - LT, 0, 1, GH);
   gx.fillStyle = 'rgba(250,229,216,.28)';
   gx.fillText('worst', GW - LT + 4, 10);
-  markerOn(gx, GW, GH, 1);
 }
 
-function markerOn(cx, w, h, full) {
-  var sel = pinned != null ? pinned : hoverY;
-  if (sel == null) return;
-  var py = Math.round(yToPx(sel)) + .5;
-  if (py < 0 || py > h) return;
-  cx.strokeStyle = pinned != null ? '#FF4208' : 'rgba(250,229,216,.55)';
-  cx.lineWidth = 1;
-  cx.beginPath(); cx.moveTo(0, py); cx.lineTo(w, py); cx.stroke();
-}
+/* THE CURSOR BAR. It covers the band it selected, not a hairline at the mouse
+   y — at full zoom a band is three pixels and a hairline leaves you guessing
+   which of them the panel on the right is describing. Drawn on the visible
+   canvas over the blitted profile, so it costs nothing to move. */
+function marker(cx, w, h, full) {
+  if (hoverY == null) return;
+  var r = bandAt(hoverY);
+  var y0 = r ? r.y0 : Math.floor(hoverY / B) * B;
+  var top = yToPxH(y0, h), bot = yToPxH(y0 + B, h);
+  if (bot < -20 || top > h + 20) return;
+  var bh = Math.max(3, bot - top);
 
-function draw() { if (!T) return; drawMap(); drawGraph(); }
+  cx.fillStyle = 'rgba(250,229,216,.14)';
+  cx.fillRect(0, top, w, bh);
+  cx.fillStyle = r ? tone(r.fps) : 'rgba(250,229,216,.6)';
+  cx.fillRect(0, top - 1, w, 1.5);
+  cx.fillRect(0, top + bh, w, 1.5);
+
+  if (full && r) {
+    var txt = Math.round(r.fps) + ' fps  ·  ' + r.ms.toFixed(1) + 'ms';
+    cx.font = '10px ui-monospace,Menlo,Consolas,monospace';
+    var tw = cx.measureText(txt).width + 12;
+    var bx = Math.min(w - tw - 4, Math.max(4, Math.min(1, r.fps / target) * (w - 34) + 8));
+    var by = top + bh + 4;
+    if (by > h - 18) by = top - 18;
+    cx.fillStyle = 'rgba(6,5,4,.92)';
+    cx.fillRect(bx, by, tw, 15);
+    cx.fillStyle = tone(r.fps);
+    cx.fillRect(bx, by, 2, 15);
+    cx.fillStyle = '#FAE5D8';
+    cx.fillText(txt, bx + 7, by + 11);
+  }
+}
 
 /* ======================================================================
    3. THE HITTERS PANEL
@@ -398,8 +447,23 @@ function bandAt(y) {
   return null;
 }
 
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* One sentence at the top saying what KIND of problem this band is, because
+   the difference between "a function is slow" and "the browser is painting too
+   much" is the difference between two completely different fixes. */
+function verdict(r, list) {
+  var t = list[0];
+  if (!t || t[1] < r.ms * 0.25) return 'No single culprit — the cost is spread across everything running here.';
+  if (t[0] === '__un') return 'Not JavaScript. This is the browser painting: a filter, a blur, a backdrop, or a big canvas on screen here. No amount of faster code fixes it — something has to stop being drawn.';
+  if (t[0].charAt(0) === 'x') return 'A blocking readback or encode. It is synchronous, so it cannot overlap with anything — the frame simply waits for it.';
+  return 'JavaScript. One driver is eating the frame; the line number is under its name.';
+}
+
 function side() {
-  var sel = pinned != null ? pinned : hoverY;
+  var sel = hoverY;
   var el = document.getElementById('side');
   if (sel == null) { el.innerHTML = '<p style="color:var(--dimmer)">Move over the profile.</p>' + drops(); return; }
   var r = bandAt(sel);
@@ -418,17 +482,21 @@ function side() {
     '<div><b>' + r.ms.toFixed(1) + '</b><i>ms / frame</i></div>' +
     '<div><b style="color:' + (r.worst > 100 ? 'var(--bad)' : 'var(--ink)') + '">' + Math.round(r.worst) + '</b><i>worst ms</i></div>' +
     '<div><b style="color:' + (r.lt ? 'var(--bad)' : 'var(--ink)') + '">' + r.lt + '</b><i>long tasks</i></div>' +
-    '</div><table>';
+    '</div><p class="verdict">' + verdict(r, list) + '</p><table>';
 
   for (var i = 0; i < list.length; i++) {
     var it = list[i], ms = it[1];
     if (ms < 0.02) continue;
     var un = it[0] === '__un';
-    var nm = un ? 'unattributed — style, layout, paint, composite, GPU'
-                : (T.names[it[0]] || it[0]);
-    var parts = nm.split('  ');
-    h += '<tr class="' + (un ? 'un' : '') + '"><td class="nm">' + parts[0] +
-         (parts[1] ? ' <em>' + parts[1] + '</em>' : '') +
+    /* The plain-English line the probe resolved from the file's own section
+       banners is the HEADLINE. The function name and line number are still
+       there, one size down, because that is what you go and edit. */
+    var lab = un ? "Everything JavaScript can't see — style, layout, paint, compositing, GPU"
+                 : ((T.labels && T.labels[it[0]]) || '');
+    var raw = un ? 'frame time, minus everything measured above it'
+                 : (T.names[it[0]] || it[0]).replace(/\s{2,}/g, ' — ');
+    h += '<tr class="' + (un ? 'un' : '') + '"><td class="nm"><b>' + esc(lab || raw) + '</b>' +
+         (lab ? '<em>' + esc(raw) + '</em>' : '') +
          '<div class="bar" style="width:' + Math.max(1, ms / top * 100).toFixed(1) + '%"></div></td>' +
          '<td class="ms">' + ms.toFixed(2) + ' ms</td>' +
          '<td class="pc">' + Math.round(ms / r.ms * 100) + '%</td></tr>';
@@ -463,41 +531,76 @@ function drops() {
 function wireDrops() {
   var d = document.querySelectorAll('.drop');
   for (var i = 0; i < d.length; i++) d[i].addEventListener('click', function () {
-    pinned = +this.getAttribute('data-y') + B / 2;
-    draw(); side();
+    /* centre the view on that band and select it, at a zoom where a band is
+       actually visible — jumping to a row you then cannot find is not a jump */
+    var y = +this.getAttribute('data-y') + B / 2;
+    var span = Math.min(docH, Math.max((T.vh || 1080) * 0.25, Math.min(view.y1 - view.y0, (T.vh || 1080) * 4)));
+    view.y0 = y - span / 2; view.y1 = view.y0 + span;
+    clampView(span);
+    hoverY = y;
+    render(); draw(); side();
   });
 }
 
 /* ======================================================================
    4. INPUT — hover, pin, wheel zoom, drag pan
    ====================================================================== */
+/* The cursor IS the selection — no click, no pin. Coalesced onto a frame so a
+   fast drag across 2,000px of profile costs one redraw per frame instead of
+   one per mouse event. Leaving the canvas keeps the last row on screen rather
+   than blanking the panel: you leave in order to go and read it. */
+var moveRaf = 0, pendingY = null;
 function onMove(e) {
   var r = gC.getBoundingClientRect();
-  hoverY = pxToY(e.clientY - r.top);
-  draw(); side();
+  pendingY = pxToY(e.clientY - r.top);
+  if (moveRaf) return;
+  moveRaf = requestAnimationFrame(function () {
+    moveRaf = 0;
+    hoverY = pendingY;
+    draw(); side();
+  });
 }
 document.getElementById('gStage').addEventListener('mousemove', onMove);
-document.getElementById('gStage').addEventListener('mouseleave', function () {
-  hoverY = null; draw(); side();
-});
-document.getElementById('gStage').addEventListener('click', function (e) {
-  var r = gC.getBoundingClientRect();
-  var y = pxToY(e.clientY - r.top);
-  pinned = (pinned != null && Math.abs(pinned - y) < (view.y1 - view.y0) / GH * 3) ? null : y;
-  draw(); side();
-});
-document.getElementById('gStage').addEventListener('wheel', function (e) {
-  e.preventDefault();
-  var r = gC.getBoundingClientRect();
-  var at = pxToY(e.clientY - r.top);
-  var f = e.deltaY > 0 ? 1.25 : 0.8;
-  var span = Math.min(docH, Math.max((T.vh || 1080) * 0.5, (view.y1 - view.y0) * f));
-  var k = (at - view.y0) / (view.y1 - view.y0);
-  view.y0 = at - span * k; view.y1 = view.y0 + span;
+document.getElementById('stage').addEventListener('mousemove', onMove);
+/* Wheel PANS. Ctrl (or cmd, or a trackpad pinch, which arrives as ctrl+wheel)
+   ZOOMS. The other way round is what a canvas that happens to be zoomable
+   defaults to, and it is wrong: scrolling is what a hand does to a long page
+   without thinking about it, and having that rescale the axis under the cursor
+   makes the thing impossible to read. */
+function clampView(span) {
+  if (span >= docH) { view.y0 = 0; view.y1 = docH; return; }
   if (view.y0 < 0) { view.y0 = 0; view.y1 = span; }
-  if (view.y1 > docH) { view.y1 = docH; view.y0 = Math.max(0, docH - span); }
-  draw(); side();
-}, { passive: false });
+  if (view.y1 > docH) { view.y1 = docH; view.y0 = docH - span; }
+}
+function onWheel(e) {
+  e.preventDefault();
+  var d = e.deltaY;
+  if (e.deltaMode === 1) d *= 16;            // lines
+  else if (e.deltaMode === 2) d *= GH;       // pages
+  var span = view.y1 - view.y0;
+
+  if (e.ctrlKey || e.metaKey) {
+    var r = gC.getBoundingClientRect();
+    var at = view.y0 + (e.clientY - r.top) / r.height * span;   // hold this point still
+    var k = (at - view.y0) / span;
+    span = Math.min(docH, Math.max((T.vh || 1080) * 0.25, span * (d > 0 ? 1.25 : 0.8)));
+    view.y0 = at - span * k; view.y1 = view.y0 + span;
+  } else {
+    /* one wheel pixel = one pixel of the drawing, so it tracks the cursor at
+       any zoom instead of flying at full-page scale */
+    var by = d * (span / (GH || 1));
+    view.y0 += by; view.y1 += by;
+  }
+  clampView(span);
+  render(); draw(); side();
+}
+document.getElementById('gStage').addEventListener('wheel', onWheel, { passive: false });
+document.getElementById('stage').addEventListener('wheel', onWheel, { passive: false });
+
+/* double-click anywhere on either canvas: back to the whole page */
+function fitAll() { view = { y0: 0, y1: docH }; render(); draw(); side(); }
+document.getElementById('gStage').addEventListener('dblclick', fitAll);
+document.getElementById('stage').addEventListener('dblclick', fitAll);
 
 /* click a section on the map to fit it */
 document.getElementById('map').addEventListener('click', function (e) {
@@ -506,10 +609,10 @@ document.getElementById('map').addEventListener('click', function (e) {
   for (var i = 0; i < secs.length; i++) {
     if (y >= secs[i][1] && y < secs[i][1] + secs[i][2]) {
       view = { y0: secs[i][1], y1: secs[i][1] + secs[i][2] };
-      draw(); side(); return;
+      render(); draw(); side(); return;
     }
   }
-  view = { y0: 0, y1: docH }; draw(); side();
+  view = { y0: 0, y1: docH }; render(); draw(); side();
 });
 
 /* ======================================================================
@@ -553,7 +656,7 @@ document.getElementById('file').addEventListener('change', function () {
 });
 
 function boot() {
-  dropCache = null; pinned = null; hoverY = null;
+  dropCache = null; hoverY = null;
   var ok = load();
   document.getElementById('main').style.display = ok ? 'flex' : 'none';
   document.getElementById('empty').style.display = ok ? 'none' : 'block';
@@ -564,8 +667,10 @@ function boot() {
     T.at.replace('T', ' ').slice(0, 19) + '  ·  ' + fmt(docH) + 'px doc  ·  ' +
     n + ' of ' + rows.length + ' bands recorded  ·  ' + T.vw + 'x' + T.vh +
     '  ·  panel read as ' + Math.round(target) + 'Hz';
-  document.getElementById('gHd').textContent =
-    'fps profile — 0 to ' + Math.round(target) + ' fps left to right, worst-frame and long-task lanes on the right';
+  document.getElementById('gHd').innerHTML =
+    'fps profile — 0 to ' + Math.round(target) + ' fps left to right, worst-frame and long-task lanes on the right' +
+    '<span style="float:right;opacity:.65">wheel scrolls &nbsp;·&nbsp; ctrl+wheel zooms &nbsp;·&nbsp; ' +
+    'double-click resets</span>';
   resize();
   side();
 }

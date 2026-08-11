@@ -137,10 +137,35 @@ Two things about it that are load-bearing:
 The layout is one shared vertical axis — the page's own scroll position. The
 map on the left is every section to scale, tinted by its worst quartile; the
 profile is fps running to the right, so a drop reads as a canyon, with
-worst-frame and long-task lanes in the gutter; hovering any row lists that
-band's hitters, worst first, in self-ms per frame. Wheel to zoom, click a
-section on the map to fit it, click the profile to pin a row. **worst 12 on the
-page** is the to-do list, one entry per 2vh so a single canyon cannot fill it.
+worst-frame and long-task lanes in the gutter; the hitters for whatever row the
+cursor is on are listed on the right, worst first, in self-ms per frame.
+**Wheel scrolls, ctrl+wheel zooms**, a click on the map fits a section,
+double-click resets. The cursor drives the selection and nothing else does —
+there is no click-to-pin, and the bar covers the whole band it selected rather
+than sitting as a hairline under the mouse, because at full zoom a band is
+three pixels and a hairline leaves you guessing which one the panel is
+describing. Leaving the canvas keeps the last row up: you left in order to read
+it. The profile is rendered into a back buffer and blitted, so moving the
+cursor costs a blit and a rectangle rather than a thousand row scans.
+
+**worst 12 on the page** is the to-do list, one entry per 2vh so a single
+canyon cannot fill it; clicking one centres the view there and selects it.
+
+Every row is named in English. The probe fetches the document's own source
+back and, for each line it charged, walks up to the section banner that line
+lives under — so `SY:paint index.html:10272` presents itself as *SECTION 2 —
+the slowed scroll, and the letter reveal it makes room for · the exit itself*,
+with the function and line still there one size down, because that is what you
+go and edit. The `<!-- === -->` banner attached to a `<script>` tag wins over
+the `/* === */` description inside it, since the first is the section's name
+and the second is its opening paragraph. There is no table of line numbers to
+maintain: it labels from the comments already in the file, which means it stays
+correct exactly as long as they do. Two traps found while building it, both of
+which produced confident wrong answers rather than blanks: a same-line banner
+pattern that also matches a bare `====` rule (it takes one of the equals signs
+as the title, and the real title on the next line is then never read), and
+resolving a line number from `fps-meter.js` against `index.html` — now any file
+that is not the document is either named explicitly or left unlabelled.
 
 The first full run of it agreed with item 2 and then sharpened it: at
 `y=10,700` in the offerings ring the frame cost 229ms, of which `getImageData`

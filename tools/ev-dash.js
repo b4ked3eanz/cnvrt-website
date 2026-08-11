@@ -25,6 +25,7 @@ return {
   meta: document.getElementById('meta').textContent,
   head: document.getElementById('head2') ? document.getElementById('head2').textContent.replace(/\s+/g, ' ') : null,
   nums: [...document.querySelectorAll('#nums div')].map(x => x.textContent.replace(/\s+/g, ' ')),
+  verdict: (document.querySelector('.verdict')||{}).textContent,
   hitters: rowsTxt,
   drops: [...document.querySelectorAll('.drop')].slice(0, 5).map(x => x.textContent.replace(/\s+/g, ' ')),
   litSamples: lit,

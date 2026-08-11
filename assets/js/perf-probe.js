@@ -219,6 +219,139 @@
   }
   RAF(tick);
 
+  /* ---- PLAIN ENGLISH ----
+     A call site is only a useful answer if you already know the file. So the
+     probe reads the document's own source back and, for every line it charged,
+     walks UP to the nearest section banner and uses that as the label:
+
+         SY:paint  index.html:10272   ->   WORK -> PRICING, THE TURN OUT
+                                           · the exit blur
+
+     No hardcoded table of line numbers, which is the version of this that
+     would be wrong a week from now. It labels from the banners that are
+     already in the file, so it stays correct as long as the comments do — and
+     a subsystem without a banner comment shows its raw call site, which is
+     itself worth knowing.
+
+     One fetch of the document, once, only when armed. */
+  var SRC = null;
+  try {
+    fetch(location.pathname).then(function (r) { return r.text(); })
+      .then(function (t) { SRC = t.split('\n'); }).catch(function () {});
+  } catch (e) {}
+
+  function ok(s) { return s && s.length > 2 && s.length < 78 && /[a-z]/i.test(s); }
+
+  /* A bare `==== / title / ====` banner often wraps its title onto a second
+     line, and half a sentence is a worse label than none. Join while it has
+     not finished one. */
+  function title(i) {
+    var t = (SRC[i] || '').trim().replace(/\s*=+\s*$/, '').replace(/\s*-->\s*$/, '');
+    for (var j = 1; j < 3 && t && t.length < 90 && !/[.:)\]]$/.test(t); j++) {
+      var nx = (SRC[i + j] || '').trim().replace(/\s*=+\s*$/, '').replace(/\s*-->\s*$/, '');
+      if (!nx || /^[=\-*]+$/.test(nx)) break;
+      t += ' ' + nx;
+    }
+    return t;
+  }
+
+  /* One line of a banner, either form. The same-line capture must exclude `=`
+     at the front, or it happily matches a BARE rule line by taking one of its
+     own equals signs as the title — and then the next-line form never gets a
+     look in. That single character is the difference between every driver
+     being named and half of them saying `anon`. */
+  function banner(i) {
+    var L = SRC[i] || '';
+    var a = L.match(/^\s*(?:\/\*|<!--)\s*={3,}\s*([^\s=]\S*.*?)\s*=*(?:-->)?\s*$/);
+    if (a && ok(a[1])) return a[1];
+    if (/^\s*(?:\/\*|<!--)\s*={3,}\s*(?:-->)?\s*$/.test(L)) return title(i + 1);
+    return '';
+  }
+
+  /* the HTML banner sitting directly above a <script> tag, if there is one */
+  function attached(i) {
+    for (var q = i - 1; q >= 0 && q > i - 12; q--) {
+      if ((SRC[q] || '').indexOf('<!--') < 0 && !/^\s*[A-Z=\s-]*$/.test(SRC[q] || '')) continue;
+      var t = banner(q);
+      if (ok(t) && (SRC[q] || '').indexOf('<!--') >= 0) return t;
+    }
+    return '';
+  }
+
+  function heading(n) {
+    if (!SRC) return '';
+    var html = '', js = '', sub = '';
+    /* Up to the previous </script>, and no further — a banner never applies
+       across a block boundary, and the blocks here run to 1,100 lines, so a
+       fixed lookback either truncates the long ones or hands a short one the
+       previous block's title.
+
+       BOTH kinds are collected, and the HTML one wins. The `<!-- === -->`
+       banner above a <script> is the SECTION NAME ("OFFERINGS — THE GLASS
+       RING"); the JS banner just inside the block is that block's opening
+       description ("A 440x440 vector, extruded into a real 3D solid..."). The
+       name is the label; the description makes a decent subtitle when there is
+       no better one. */
+    for (var i = n - 1; i >= 0 && i > n - 4000; i--) {
+      var L = SRC[i];
+      if (L.indexOf('</script>') >= 0) break;
+      /* The opening tag is the hard boundary. The section name is the HTML
+         banner ATTACHED to it — a few lines directly above. Walking past the
+         tag into the markup and the stylesheet above is how a scroll driver
+         ends up labelled with the name of a CSS block twenty screens away. */
+      if (/<script[\s>]/.test(L)) { html = attached(i); break; }
+
+      var t = banner(i);
+      if (ok(t)) { if (!js) js = t; continue; }
+
+      /* the sub-heading:  /* ---- NAME ---- */
+      if (!sub) {
+        var m = L.match(/^\s*\/\*\s*-{2,}\s*(.+?)\s*-{2,}\s*(?:\*\/)?\s*$/);
+        if (m && ok(m[1])) sub = m[1];
+      }
+    }
+    var top = html || js;
+    if (!top) return sub;
+    if (!sub && html && js) sub = js.length > 64 ? js.slice(0, 61) + '…' : js;
+    if (!sub || sub.toLowerCase() === top.toLowerCase()) return top;
+    return top + '  ·  ' + sub;
+  }
+
+  /* the four wrapped stalls describe themselves */
+  var PLAIN = {
+    xtoDataURL:   'Turning a canvas into a PNG. Freezes the main thread while it encodes.',
+    xtoBlob:      'Turning a canvas into an image file.',
+    xgetImageData:'Reading pixels back off a canvas. Waits for everything queued before it.',
+    xreadPixels:  'Reading pixels back off the GPU. Stalls the CPU until the GPU catches up.',
+    xreadPixels2: 'Reading pixels back off the GPU. Stalls the CPU until the GPU catches up.'
+  };
+
+  /* Anything that is not the document itself. Resolving a line number from
+     fps-meter.js against index.html's source is worse than not labelling it —
+     it produces a confident, wrong answer from whatever banner happens to sit
+     at that line number in the other file. */
+  var FILES = {
+    'fps-meter.js': 'The frame meter overlay itself — this row is what measuring costs.',
+    'perf-probe.js': 'This probe.',
+    'hud-frames.js': 'Footer HUD — the baked frame geometry.',
+    'sec2-fg-frame.js': 'Section 2 — the foreground frame geometry.'
+  };
+  var DOCFILE = (location.pathname.split('/').pop() || 'index.html');
+
+  function labels() {
+    var out = {};
+    for (var k in names) {
+      if (PLAIN[k]) { out[k] = PLAIN[k]; continue; }
+      var m = names[k].match(/([\w.-]+):(\d+)$/);
+      if (!m) continue;
+      if (FILES[m[1]]) { out[k] = FILES[m[1]]; continue; }
+      if (m[1] !== DOCFILE) continue;
+      var h = heading(+m[2] - 1);
+      if (h) out[k] = h;
+    }
+    return out;
+  }
+
   /* ---- geometry, measured on load and after fonts settle ---- */
   var IDS = ['hero', 'sec2', 'offerings', 'work', 'faq', 'contact'];
   var secs = [];
@@ -254,7 +387,7 @@
       docH: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
       vh: innerHeight, vw: innerWidth, dpr: devicePixelRatio,
       ua: navigator.userAgent, url: location.pathname + location.search,
-      secs: secs, names: names, bands: compact()
+      secs: secs, names: names, labels: labels(), bands: compact()
     };
   }
   function save() {
